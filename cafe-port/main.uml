@@ -1,0 +1,332 @@
+<UML>
+  <main viewport="expand">
+    <templates>
+      <button id="questTile" class="quest-tile" width="188" height="78" />
+      <text id="alertMark" class="alert-mark">!</text>
+      <text id="scaredEggMark" class="scared-egg-mark">!</text>
+    </templates>
+    <audio src="audio/final-boss.ogg" autoplay="false" />
+    <audio src="audio/hard-phase.wav" autoplay="false" />
+    <audio src="audio/hard-waves.wav" autoplay="false" />
+    <audio src="audio/shockwave-whoosh.wav" autoplay="false" />
+    <audio src="audio/hand-whoosh.wav" autoplay="false" />
+    <audio src="audio/hyperactivity.wav" autoplay="false" />
+    <audio src="audio/meme-shocked.wav" autoplay="false" />
+    <audio src="audio/meme-video.wav" autoplay="false" />
+    <audio src="audio/meme-oh-my-god.wav" autoplay="false" />
+    <audio src="audio/meme-faaah.wav" autoplay="false" />
+    <audio src="audio/meme-cat-laugh.wav" autoplay="false" />
+    <audio src="audio/meme-phone.wav" autoplay="false" />
+
+    <scene id="title" display="both">
+      <image src="assets/gradient-title.png" x="0" y="0" width="640" height="480" />
+      <image id="titleEgg" src="assets/egg.png" x="269" y="129" width="102" height="124" />
+      <panel class="title-sticker" x="151" y="36" width="338" height="78" />
+      <text class="title-ink" x="242" y="48">An EgG</text>
+      <text class="title-sub" x="123" y="274">an extremely normal infinite desk</text>
+      <button id="titleStart" class="gold-button" x="170" y="319" width="300" height="58">START THROWING EGGS</button>
+      <text id="titleSelectionMark" class="title-selection" x="145" y="327">></text>
+      <text class="hint" x="191" y="451">TOUCH OR USE STICK + A</text>
+    </scene>
+
+
+    <scene id="saves" display="both" controller-accept="script">
+      <image src="assets/gradient-title.png" x="0" y="0" width="640" height="480" />
+      <text class="page-title" x="183" y="27">PICK A SAVE FILE!</text>
+      <text class="hint-dark" x="168" y="73">each desk keeps its own progress</text>
+      <button id="saveOne" class="save-card" x="28" y="119" width="181" height="267"></button>
+      <button id="saveTwo" class="save-card" x="229" y="119" width="181" height="267"></button>
+      <button id="saveThree" class="save-card" x="430" y="119" width="181" height="267"></button>
+      <text id="slotOneTitle" class="save-title" x="53" y="146">FILE 1</text>
+      <text id="slotTwoTitle" class="save-title" x="254" y="146">FILE 2</text>
+      <text id="slotThreeTitle" class="save-title" x="455" y="146">FILE 3</text>
+      <text id="slotOneInfo" class="save-info" x="48" y="218">NEW DESK</text>
+      <text id="slotTwoInfo" class="save-info" x="249" y="218">NEW DESK</text>
+      <text id="slotThreeInfo" class="save-info" x="450" y="218">NEW DESK</text>
+      <text class="hint-dark" x="133" y="430">STICK: FILE  •  A: PLAY  •  B: BACK</text>
+    </scene>
+
+
+    <scene id="desk" display="both">
+      <image id="deskSkyBase" src="assets/gradient-plains.png" x="0" y="0" width="640" height="480" />
+      <image id="deskSkyOverlay" src="assets/gradient-plains.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="deskSkyFinal" src="assets/gradient-final.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <group id="deskCamera" x="320" y="240" order="1">
+        <image id="deskCaveChunk0" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk1" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk2" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk3" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk4" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk5" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk6" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk7" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <image id="deskCaveChunk8" src="procedural:cave:0:0:0" x="0" y="0" width="500" height="500" visible="false" />
+        <spritebatch id="deskPans" src="assets/pan-cafe.svg" max="44" />
+        <spritebatch id="deskMouths" src="assets/mouth.svg" max="16" />
+        <spritebatch id="deskBumpers" src="assets/bumper.svg" max="60" />
+        <spritebatch id="deskButtons" src="assets/button.svg" max="12" />
+        <image id="deskHole" src="assets/black-hole.png" x="0" y="0" width="128" height="128" visible="false" />
+        <spritebatch id="deskMaps" src="assets/map.svg" max="4" />
+        <spritebatch id="deskMagnets" src="assets/magnet.svg" max="20" />
+        <spritebatch id="deskNotes" src="assets/sticky.svg" max="28" />
+        <spritebatch id="deskFans" src="assets/fan.svg" max="20" />
+        <spritebatch id="deskBooks" src="assets/book.svg" max="25" />
+        <spritebatch id="deskBricks" src="assets/brick.svg" max="25" />
+        <spritebatch id="deskPencils" src="assets/pencil.svg" max="25" />
+        <spritebatch id="deskPortals" src="assets/portal.svg" max="24" />
+        <spritebatch id="deskStores" src="assets/store.svg" max="16" />
+        <spritebatch id="friedWhites" src="assets/fried-white.svg" max="32" />
+        <spritebatch id="friedYolks" src="assets/fried-yolk.svg" max="32" />
+        <spritebatch id="deskEggs" src="assets/egg.png" max="32" />
+        <image id="finalBossGlow" src="assets/boss-glow.png" x="0" y="0" width="174" height="174" visible="false" />
+        <image id="finalLeftGlow" src="assets/boss-glow.png" x="0" y="0" width="174" height="174" visible="false" />
+        <image id="finalRightGlow" src="assets/boss-glow.png" x="0" y="0" width="174" height="174" visible="false" />
+        <image id="finalBossCore" src="assets/boss-core.png" x="0" y="0" width="122" height="122" visible="false" />
+        <image id="finalBossRing" src="assets/boss-ring.png" x="0" y="0" width="50" height="50" visible="false" />
+        <image id="finalLeftHand" src="assets/hard-orb.png" x="0" y="0" width="74" height="74" visible="false" />
+        <image id="finalRightHand" src="assets/hard-orb.png" x="0" y="0" width="74" height="74" visible="false" />
+        <spritebatch id="finalShockRings" src="assets/shockwave-segment.png" max="112" />
+        <text id="finalWarningA" class="alert-mark" x="0" y="0" visible="false">!</text>
+        <text id="finalWarningB" class="alert-mark" x="0" y="0" visible="false">!</text>
+        <spritebatch id="fryBarTracks" src="assets/fry-bar-track.svg" max="32" />
+        <spritebatch id="fryBarFills" src="assets/fry-bar-fill.svg" max="32" />
+        <group id="scaredEggMarks" />
+      </group>
+      <particles id="windTrailA" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailB" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailC" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailD" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailE" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailF" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailG" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailH" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailI" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="windTrailJ" camera="true" x="0" y="0" rotation="63" rate="7" emitting="false" max="12" lifetime="1.25" speed="84" spread="8" spawn-width="38" spin="0" shape="rectangle" particle-width="12" particle-height="2" particle-rotation="-90" start-color="#263f9dff" end-color="#4468baff" order="2" />
+      <particles id="deskEggBirth" x="320" y="240" rate="0" emitting="false" max="96" lifetime="0.32" speed="52" spread="180" particle-size="5" end-size="1" start-color="#fff9d9ff" end-color="#ffe49500" order="3" />
+      <particles id="deskEggBreak" x="320" y="240" rate="0" emitting="false" max="128" lifetime="0.42" speed="95" spread="180" particle-size="7" end-size="2" start-color="#fff8d5ff" end-color="#f7bf4d00" order="3" />
+      <panel id="deskHudRibbon" class="hud-ribbon" screen-anchor="stretch" x="12" y="10" width="616" height="57" order="4" />
+      <text id="deskQuestCount" class="hud-title" screen-anchor="left" x="29" y="18" order="5">0 QUESTS</text>
+      <text id="deskWallet" class="hud-wallet" screen-anchor="left" x="160" y="23" order="5">$0</text>
+      <panel id="deskMapHintPanel" class="map-hint-panel" screen-anchor="left" x="12" y="72" width="266" height="31" visible="false" order="4" />
+      <text id="deskBiomeHint" class="hud-small" screen-anchor="left" x="24" y="77" visible="false" order="5">infinite desk</text>
+      <button id="shopButton" class="hud-button" screen-anchor="right" x="330" y="19" width="67" height="38" order="5">SHOP</button>
+      <button id="bagButton" class="hud-button" screen-anchor="right" x="402" y="19" width="67" height="38" order="5">BAG</button>
+      <button id="questsButton" class="hud-button" screen-anchor="right" x="474" y="19" width="67" height="38" order="5">QUESTS</button>
+      <button id="pauseButton" class="hud-button" screen-anchor="right" x="546" y="19" width="72" height="38" order="8">PAUSE</button>
+      <image id="giraffeImage" src="assets/giraffe.png" screen-anchor="left" x="4" y="171" width="154" height="269" visible="false" order="6" />
+      <particles id="giraffeCoins" screen-anchor="left" x="80" y="420" rate="0" emitting="false" max="36" lifetime="0.8" speed="75" spread="180" particle-size="8" end-size="3" start-color="#ffed75ff" end-color="#ffbd30ff" order="7" />
+      <image id="electricGiraffeImage" src="assets/giraffe.png" screen-anchor="right" x="482" y="171" width="154" height="269" hue="190" saturation="1.45" visible="false" order="6" />
+      <particles id="electricGiraffeSparks" screen-anchor="right" x="560" y="385" rate="0" emitting="false" max="36" lifetime="0.55" speed="110" spread="180" particle-size="7" end-size="2" start-color="#b8f8ffff" end-color="#268dffff" order="7" />
+      <particles id="finalMeatGlitch" x="320" y="240" rate="0" emitting="false" max="32" lifetime="0.36" speed="88" spread="180" particle-size="6" end-size="1" start-color="#d856ffff" end-color="#48009d00" order="11" />
+      <particles id="finalMeatZap" x="320" y="240" rate="0" emitting="false" max="36" lifetime="0.46" speed="116" spread="180" particle-size="7" end-size="1" start-color="#b8ffffff" end-color="#1aa6ff00" order="11" />
+      <button id="bagEggButton" class="bag-egg-button" screen-anchor="right" x="520" y="408" width="110" height="62" visible="false" order="9"></button>
+      <image id="backpackIcon" src="assets/backpack.svg" screen-anchor="right" x="526" y="414" width="48" height="48" visible="false" order="10" />
+      <text id="backpackCount" class="backpack-count" screen-anchor="right" x="578" y="431" visible="false" order="10">0/24</text>
+      <panel id="deskToastPanel" class="toast-panel" x="109" y="111" width="422" height="39" visible="false" order="5" />
+      <text id="deskToast" class="toast" x="125" y="118" order="6"></text>
+      <text id="deskHelp" class="footer-help" screen-anchor="left" x="20" y="448" order="5">DRAG EGGS  •  SWIPE TO THROW  •  DRAG DESK TO EXPLORE</text>
+      <group id="finalHud" visible="false" order="7">
+        <panel id="finalHudPanel" class="hud-ribbon" screen-anchor="stretch" x="12" y="10" width="616" height="68" visible="false" />
+        <text id="finalBossLabel" class="hud-title" screen-anchor="left" x="29" y="15">UNDEF / PHASE IV</text>
+        <text id="finalBossHP" class="hud-small" screen-anchor="right" x="440" y="18">90 / 90</text>
+        <panel id="finalHealthTrack" class="health-track" screen-anchor="stretch" x="29" y="51" width="480" height="10" />
+        <panel id="finalHealthFill" class="boss-health" screen-anchor="stretch-progress" screen-base-width="480" x="29" y="51" width="480" height="10" />
+        <text id="finalPlayerHP" class="player-hp" screen-anchor="left" x="26" y="85">YOU 100 / 100</text>
+        <panel id="finalPlayerTrack" class="health-track" screen-anchor="left" x="137" y="91" width="96" height="8" />
+        <panel id="finalPlayerFill" class="final-player-health" screen-anchor="left" x="137" y="91" width="96" height="8" />
+        <text id="finalMessage" class="boss-message" x="250" y="85">DRAG EGGS INTO UNDEF</text>
+      </group>
+      <button id="finalMeatButton" class="feed-button" x="284" y="408" width="113" height="43" visible="false" order="11">MEAT 0</button>
+      <button id="finalElectricButton" class="feed-button" x="404" y="408" width="113" height="43" visible="false" order="11">ZAP MEAT 0</button>
+      <image id="deskHeldMeat" src="assets/meat.png" x="0" y="0" width="48" height="36" visible="false" order="12" />
+      <shape id="deskCursor" kind="circle" class="cursor" x="315" y="235" width="10" height="10" order="10" />
+      <group id="deskPause" visible="false" order="20">
+        <panel id="deskPauseScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="deskPauseCard" class="modal-card" x="88" y="47" width="464" height="389" />
+        <text id="deskPauseTitle" class="modal-heading" x="250" y="62">PAUSED!</text>
+        <button id="deskResume" class="modal-button desk-modal-button" x="120" y="128" width="185" height="60">RESUME</button>
+        <button id="deskQuestMenu" class="modal-button desk-modal-button" x="335" y="128" width="185" height="60">QUESTS</button>
+        <button id="deskShopMenu" class="modal-button desk-modal-button" x="120" y="205" width="185" height="60">SHOP</button>
+        <button id="deskBagMenu" class="modal-button desk-modal-button" x="335" y="205" width="185" height="60">BAG</button>
+        <button id="deskSaveHome" class="modal-button desk-modal-button" x="120" y="282" width="185" height="60">SAVE &amp; HOME</button>
+        <button id="deskControls" class="modal-button desk-modal-button" x="335" y="282" width="185" height="60">CONTROLS</button>
+        <text id="deskPauseHint" class="modal-hint" x="126" y="384">D-PAD / STICK CHOOSE  •  A SELECT  •  B RESUME</text>
+      </group>
+      <group id="deskMarket" visible="false" order="22">
+        <panel id="marketScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="marketCard" class="market-card" x="35" y="32" width="570" height="420" />
+        <text id="marketTitle" class="modal-heading" x="65" y="47">EGG EMPORIUM</text>
+        <text id="marketBalance" class="market-balance" x="414" y="53">$0</text>
+        <button id="marketShopTab" class="market-tab" x="65" y="100" width="245" height="43">SHOP</button>
+        <button id="marketBagTab" class="market-tab" x="330" y="100" width="245" height="43">BAG</button>
+        <button id="marketOption0" class="market-option" x="65" y="157" width="245" height="61">EGG GRABBER</button>
+        <button id="marketOption1" class="market-option" x="330" y="157" width="245" height="61">PORTABLE PAN</button>
+        <button id="marketOption2" class="market-option" x="65" y="231" width="245" height="61">GIRAFFE</button>
+        <button id="marketOption3" class="market-option" x="330" y="231" width="245" height="61"></button>
+        <button id="marketOption4" class="market-option" x="65" y="305" width="245" height="61"></button>
+        <button id="marketOption5" class="market-option" x="330" y="305" width="245" height="61"></button>
+        <image id="marketItemIcon0" src="assets/grabber.svg" x="258" y="166" width="44" height="44" visible="false" />
+        <image id="marketItemIcon1" src="assets/pan-cafe.svg" x="523" y="166" width="44" height="44" visible="false" />
+        <image id="marketItemIcon2" src="assets/giraffe.png" x="269" y="239" width="27" height="46" visible="false" />
+        <image id="marketItemIcon3" src="assets/fried-egg.svg" x="523" y="240" width="44" height="44" visible="false" />
+        <image id="marketItemIcon4" src="assets/giraffe.png" x="269" y="313" width="27" height="46" visible="false" />
+        <image id="marketItemIcon5" src="assets/meat.png" x="523" y="318" width="44" height="34" visible="false" />
+        <panel id="marketInfoPanel" class="market-info-panel" x="330" y="231" width="245" height="135" />
+        <text id="marketInfo" class="market-info" x="349" y="246">MAKE MONEY!\nBREAK AN EGG +$5\nFRY AN EGG +$10\nBEAT UNDEF +$100</text>
+        <text id="marketStatus" class="market-status" x="66" y="372">BUY THINGS. MAKE MISTAKES.</text>
+        <panel id="marketFryTrack" class="market-fry-track" x="65" y="398" width="190" height="8" visible="false" />
+        <panel id="marketFryFill" class="market-fry-fill" x="65" y="398" width="1" height="8" visible="false" />
+        <text id="marketHint" class="market-hint" x="65" y="418">ZL / ZR TABS  •  STICK CHOOSE  •  A USE  •  B CLOSE</text>
+        <button id="marketClose" class="market-close" x="544" y="48" width="42" height="37">X</button>
+      </group>
+      <group id="deskSellPicker" visible="false" order="23">
+        <panel id="pickerScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="pickerCard" class="market-card" x="35" y="32" width="570" height="420" />
+        <text id="pickerTitle" class="modal-heading" x="65" y="49">PICK AN ITEM TO SELL</text>
+        <text id="pickerBalance" class="market-balance" x="414" y="54">$0</text>
+        <button id="pickerClose" class="market-close" x="544" y="48" width="42" height="37">X</button>
+        <button id="pickerTabEggs" class="market-tab picker-tab" x="65" y="99" width="160" height="43">EGGS</button>
+        <button id="pickerTabFood" class="market-tab picker-tab" x="239" y="99" width="160" height="43">FOOD</button>
+        <button id="pickerTabGear" class="market-tab picker-tab" x="413" y="99" width="160" height="43">GEAR</button>
+        <button id="pickerTile0" class="picker-tile" x="65" y="155" width="160" height="92"></button>
+        <button id="pickerTile1" class="picker-tile" x="239" y="155" width="160" height="92"></button>
+        <button id="pickerTile2" class="picker-tile" x="413" y="155" width="160" height="92"></button>
+        <button id="pickerTile3" class="picker-tile" x="65" y="263" width="160" height="92"></button>
+        <button id="pickerTile4" class="picker-tile" x="239" y="263" width="160" height="92"></button>
+        <button id="pickerTile5" class="picker-tile" x="413" y="263" width="160" height="92"></button>
+        <image id="pickerIcon0" src="assets/egg.png" x="125" y="164" width="42" height="48" />
+        <image id="pickerIcon1" src="assets/egg.png" x="299" y="164" width="42" height="48" />
+        <image id="pickerIcon2" src="assets/egg.png" x="473" y="164" width="42" height="48" />
+        <image id="pickerIcon3" src="assets/egg.png" x="125" y="272" width="42" height="48" />
+        <image id="pickerIcon4" src="assets/egg.png" x="299" y="272" width="42" height="48" />
+        <image id="pickerIcon5" src="assets/egg.png" x="473" y="272" width="42" height="48" />
+        <text id="pickerLabel0" class="picker-label" x="80" y="218">RAW EGG x1</text>
+        <text id="pickerLabel1" class="picker-label" x="254" y="218">FRIED EGG x1</text>
+        <text id="pickerLabel2" class="picker-label" x="428" y="218">MEAT CUT x1</text>
+        <text id="pickerLabel3" class="picker-label" x="80" y="326"></text>
+        <text id="pickerLabel4" class="picker-label" x="254" y="326"></text>
+        <text id="pickerLabel5" class="picker-label" x="428" y="326"></text>
+        <text id="pickerEmpty" class="picker-empty" x="102" y="223">NO ITEMS IN THIS TAB</text>
+        <text id="pickerStatus" class="market-status" x="65" y="374">CHOOSE AN ITEM TO LIST</text>
+        <button id="pickerPrev" class="page-button" x="440" y="369" width="38" height="36">-</button>
+        <text id="pickerPageText" class="quest-page" x="493" y="376">1 / 1</text>
+        <button id="pickerNext" class="page-button" x="553" y="369" width="38" height="36">+</button>
+        <text id="pickerHint" class="market-hint" x="65" y="421">ZL / ZR TABS  •  STICK PICK  •  A LIST  •  B CLOSE</text>
+      </group>
+      <group id="deskQuests" visible="false" order="21">
+        <panel id="deskQuestScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="deskQuestCard" class="quest-book" x="12" y="22" width="616" height="438" />
+        <text id="deskQuestTitle" class="modal-heading" x="60" y="34">STUPID QUEST BOOK</text>
+        <button id="questPrev" class="page-button" x="454" y="41" width="40" height="35">-</button>
+        <text id="questPageText" class="quest-page" x="505" y="48">1 / 4</text>
+        <button id="questNext" class="page-button" x="573" y="41" width="40" height="35">+</button>
+        <group id="questGrid" />
+        <panel id="questDetailPanel" class="quest-detail-panel" x="26" y="361" width="588" height="55" />
+        <text id="questDetail" class="quest-detail" x="40" y="372">Find things. Throw eggs. Cause problems.</text>
+        <text id="deskQuestHint" class="modal-hint" x="76" y="429">ZL / ZR PAGE  •  D-PAD / STICK CHOOSE  •  B CLOSE</text>
+      </group>
+      <group id="finalWin" visible="false" order="23">
+        <panel id="finalWinScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="finalWinCard" class="modal-card" x="95" y="95" width="450" height="286" />
+        <text id="finalWinTitle" class="modal-heading" x="165" y="130">UNDEF DISPELLED!</text>
+        <text id="finalWinDetail" class="modal-hint" x="165" y="209">The final void is gone. Your desk is yours.</text>
+        <button id="finalWinContinue" class="gold-button" x="174" y="281" width="292" height="64">CONTINUE</button>
+      </group>
+    </scene>
+
+    <scene id="fight" display="both">
+      <image id="fightPlains" src="assets/gradient-plains.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightPinball" src="assets/gradient-pinball.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightFrying" src="assets/gradient-frying.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightMagnet" src="assets/gradient-magnet.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightSticky" src="assets/gradient-sticky.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightWind" src="assets/gradient-wind.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightPortal" src="assets/gradient-portal.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightCave" src="assets/gradient-cave.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightFryingCave" src="assets/gradient-frying-cave.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <image id="fightPortalCave" src="assets/gradient-portal-cave.png" x="0" y="0" width="640" height="480" opacity="0" />
+      <panel id="fightBlack" class="phase-black" x="0" y="0" width="640" height="480" opacity="0" />
+      <panel id="fightWhite" class="phase-white" x="0" y="0" width="640" height="480" opacity="0" />
+      <spritebatch id="interiorFieldA" src="assets/interior-fragment.png" max="200" order="1" />
+      <spritebatch id="interiorFieldB" src="assets/interior-fragment.png" max="200" order="1" />
+      <spritebatch id="interiorFieldC" src="assets/interior-fragment.png" max="200" order="1" />
+      <spritebatch id="interiorFieldD" src="assets/interior-fragment.png" max="200" order="1" />
+      <spritebatch id="breakoutField" src="assets/interior-fragment.png" max="80" order="2" />
+      <image id="bossGlow" class="glow" src="assets/boss-glow.png" x="233" y="136" width="174" height="174" order="3" />
+      <image id="bossAura" src="assets/boss-aura.png" x="229" y="131" width="182" height="182" order="4" />
+      <image id="bossCore" src="assets/boss-core.png" x="259" y="159" width="122" height="122" order="5" />
+      <image id="bossRing" src="assets/boss-ring.png" x="295" y="195" width="50" height="50" order="6" />
+      <image id="leftGlow" class="glow" src="assets/boss-glow.png" x="145" y="169" width="120" height="120" visible="false" order="3" />
+      <image id="rightGlow" class="glow" src="assets/boss-glow.png" x="375" y="169" width="120" height="120" visible="false" order="3" />
+      <image id="leftHand" src="assets/hard-orb.png" x="178" y="197" width="74" height="74" visible="false" order="5" />
+      <image id="rightHand" src="assets/hard-orb.png" x="388" y="197" width="74" height="74" visible="false" order="5" />
+      <spritebatch id="bossEggs" src="assets/egg.png" max="24" order="7" />
+      <spritebatch id="avoidMarkers" src="assets/avoidance-warning.png" max="20" order="8" />
+      <spritebatch id="avoidHazards" src="assets/avoidance-hazard.png" max="20" order="8" />
+      <spritebatch id="shockRings" src="assets/shockwave-visible.png" max="4" order="8" />
+      <image id="stripBeam" src="assets/interior-beam.png" x="289" y="41" width="62" height="398" visible="false" order="8" />
+      <spritebatch id="stripOrbsA" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripOrbsB" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripOrbsC" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripOrbsD" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripOrbsE" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripOrbsF" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripMovingA" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripMovingB" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripMovingC" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripMovingD" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripMovingE" src="assets/interior-fragment.png" max="210" order="8" />
+      <spritebatch id="stripMovingF" src="assets/interior-fragment.png" max="210" order="8" />
+      <group id="fightWarnings" order="9" />
+      <particles id="bossSparks" x="320" y="240" rate="0" emitting="false" max="64" lifetime="0.65" speed="80" spread="180" particle-size="6" end-size="3" start-color="#cd55ffff" end-color="#8a20ffff" order="9" />
+      <particles id="bossMeatZap" x="320" y="240" rate="0" emitting="false" max="36" lifetime="0.46" speed="116" spread="180" particle-size="7" end-size="1" start-color="#b8ffffff" end-color="#1aa6ff00" order="9" />
+      <particles id="bossEggBirth" x="320" y="240" rate="0" emitting="false" max="96" lifetime="0.32" speed="52" spread="180" particle-size="5" end-size="1" start-color="#fff9d9ff" end-color="#ffe49500" order="9" />
+      <particles id="bossEggBreak" x="320" y="240" rate="0" emitting="false" max="128" lifetime="0.42" speed="95" spread="180" particle-size="7" end-size="2" start-color="#fff8d5ff" end-color="#f7bf4d00" order="9" />
+      <panel class="hud-ribbon" screen-anchor="stretch" x="12" y="10" width="616" height="64" order="10" />
+      <text id="bossPhase" class="hud-title" screen-anchor="left" x="28" y="18" order="11">UNDEF / PHASE I</text>
+      <text id="bossHP" class="hud-small" screen-anchor="right" x="426" y="23" order="11">200 / 200</text>
+      <panel class="health-track" screen-anchor="stretch" x="27" y="52" width="578" height="10" order="11" />
+      <panel id="bossHealthFill" class="boss-health" screen-anchor="stretch-progress" screen-base-width="578" x="27" y="52" width="578" height="10" order="12" />
+      <text id="playerHP" class="player-hp" screen-anchor="left" x="26" y="82" order="11">YOU 100 / 100</text>
+      <text id="bossMessage" class="boss-message" x="163" y="105" order="11">Drag eggs into UNDEF</text>
+      <button id="fightMeatButton" class="feed-button" x="284" y="425" width="113" height="43" order="11">MEAT 0</button>
+      <button id="fightElectricButton" class="feed-button" x="404" y="425" width="113" height="43" order="11">ZAP MEAT 0</button>
+      <image id="fightHeldMeat" src="assets/meat.png" x="0" y="0" width="48" height="36" visible="false" order="12" />
+      <button id="fightPauseButton" class="hud-button" screen-anchor="right" x="538" y="83" width="78" height="36" order="11">PAUSE</button>
+      <shape id="fightCursor" kind="circle" class="cursor" x="315" y="375" width="10" height="10" order="11" />
+      <group id="fightPause" visible="false" order="20">
+        <panel id="fightPauseScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="fightPauseCard" class="modal-card" x="98" y="71" width="444" height="342" />
+        <text id="fightPauseTitle" class="modal-heading" x="259" y="92">PAUSED!</text>
+        <button id="fightResume" class="modal-button" x="137" y="168" width="169" height="62">RESUME</button>
+        <button id="fightRestart" class="modal-button" x="334" y="168" width="169" height="62">RESTART</button>
+        <button id="fightDesk" class="modal-button" x="137" y="254" width="169" height="62">BACK TO DESK</button>
+        <button id="fightControls" class="modal-button" x="334" y="254" width="169" height="62">CONTROLS</button>
+        <text id="fightPauseHint" class="modal-hint" x="126" y="351">D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME</text>
+      </group>
+      <group id="fightResult" visible="false" order="22">
+        <panel id="fightResultScrim" class="modal-scrim" x="0" y="0" width="640" height="480" />
+        <panel id="fightResultCard" class="modal-card" x="96" y="90" width="448" height="292" />
+        <text id="resultTitle" class="modal-heading" x="170" y="127">UNDEF DISPELLED!</text>
+        <text id="resultDetail" class="modal-hint" x="163" y="206">All three phases survived.</text>
+        <button id="resultDesk" class="gold-button" x="174" y="274" width="292" height="64">BACK TO DESK</button>
+      </group>
+    </scene>
+    <scene id="credits" display="both">
+      <image src="assets/gradient-final.png" x="0" y="0" width="640" height="480" />
+      <panel class="credits-shade" x="0" y="0" width="640" height="480" />
+      <text id="creditLine0" class="credit-heading" x="54" y="480"></text>
+      <text id="creditLine1" class="credit-line" x="54" y="480"></text>
+      <text id="creditLine2" class="credit-line" x="54" y="480"></text>
+      <text id="creditLine3" class="credit-line" x="54" y="480"></text>
+      <text id="creditLine4" class="credit-line" x="54" y="480"></text>
+      <text id="creditLine5" class="credit-line" x="54" y="480"></text>
+      <text id="creditLine6" class="credit-line" x="54" y="480"></text>
+      <text id="creditLine7" class="credit-line" x="54" y="480"></text>
+      <image id="creditCheese" src="assets/cheese.svg" x="230" y="480" width="180" height="130" visible="false" />
+      <text class="credit-hint" x="22" y="450">A: SKIP</text>
+    </scene>
+  </main>
+  <style src="main.cstyle" />
+  <script src="main-bundle.cafe" />
+</UML>

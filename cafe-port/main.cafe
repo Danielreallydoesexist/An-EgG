@@ -1,0 +1,3927 @@
+// An EgG keeps a 640x480 centered play area and reveals more desk on wide screens.
+// World objects and eggs are bounded batches; no unbounded scene-node spawning.
+const W = 640;
+const H = 480;
+let VIEW_LEFT = Screen.left;
+let VIEW_RIGHT = Screen.right;
+let VIEW_HALF = Screen.width/2;
+const CHUNK = 500;
+const CAVE_TUNNEL_HALF = 76;
+const OBJECT_CELL = 200;
+const STRIP_CELL = 48;
+// Distant eggs stay saved, but only nearby eggs are rendered or fully simulated.
+const MAX_EGGS = 512;
+let MAX_CAMERA_EGGS = Math.round(16*Screen.width/W);
+const MAX_RENDER_EGGS = 32;
+const DESK_EGG_WIDTH = 48;
+const BIG_DESK_EGG_WIDTH = 72;
+const BOSS_EGG_WIDTH = 49;
+const BIG_BOSS_EGG_WIDTH = 74;
+const STRIP_TELEGRAPH = 2;
+const STRIP_FORMATION = 1.15;
+const STRIP_EXTRUDE = 13/30;
+const STRIP_FIELD_TIME = 5;
+const STRIP_HAZARDS = 1260;
+const MAX_SPEED = 625;
+const BOUNCE_MAX_SPEED = MAX_SPEED*3;
+const THROW_SPEED = 115;
+const BIOMES = ["plains", "pinball", "frying", "magnet", "sticky", "wind", "portal",
+  "cave", "fryingCave", "portalCave"];
+const SKY_IMAGES = {plains:"assets/gradient-plains.png",
+  pinball:"assets/gradient-pinball.png",frying:"assets/gradient-frying.png",
+  magnet:"assets/gradient-magnet.png",sticky:"assets/gradient-sticky.png",
+  wind:"assets/gradient-wind.png",portal:"assets/gradient-portal.png",
+  cave:"assets/gradient-cave.png",fryingCave:"assets/gradient-frying-cave.png",
+  portalCave:"assets/gradient-portal-cave.png"};
+const MAP_TARGETS = [{name:"PAN",x:-775,y:410},{name:"BUTTON",x:1160,y:180},
+  {name:"MOUTH",x:-1430,y:-480},{name:"STORE",x:200,y:120}];
+const EGG_GRABBER_PRICE = 25;
+const PORTABLE_PAN_PRICE = 60;
+const GIRAFFE_PRICE = 120;
+const ELECTRIC_GIRAFFE_PRICE = 1000;
+const SALE_INTERVAL = 10;
+const INVENTORY_LIMIT = 24;
+const SELL_TABS = ["eggs","food","gear"];
+const SELL_ITEMS = [
+  {id:"rawEgg",name:"RAW EGG",tab:"eggs",icon:"assets/egg.png"},
+  {id:"friedEgg",name:"FRIED EGG",tab:"eggs",icon:"assets/fried-egg.svg"},
+  {id:"meat",name:"MEAT CUT",tab:"food",icon:"assets/meat.png"},
+  {id:"electricMeat",name:"ELECTRIC MEAT",tab:"food",icon:"assets/meat.png"},
+  {id:"grabber",name:"EGG GRABBER",tab:"gear",icon:"assets/grabber.svg"},
+  {id:"pan",name:"PORTABLE PAN",tab:"gear",icon:"assets/pan-cafe.svg"}];
+const SELL_PAGE_SIZE = 6;
+const QUESTS = [
+  ["map", "ScRoLlInG mAp", "Find the map that locates your desk objects."],
+  ["pan", "A pAn", "Find a pan."],
+  ["fried", "A fRiEd EgG", "Leave an egg in a pan until it fries."],
+  ["fried_more", "MoRe FrIeD", "Fry a second egg."],
+  ["fried_flight", "FRIED AND FLYING", "Throw a fried egg."],
+  ["yeet", "yEeT!!!", "Launch your first egg with a swipe."],
+  ["yeet_more", "EGG AIRLINES", "Launch ten eggs."],
+  ["eggs", "MoRe EgGs", "Break ten eggs."],
+  ["bounce", "BoInG!!!!", "Bounce an egg from a book or bumper."],
+  ["bricked", "BrIcKeD", "Smash a fast egg against a brick."],
+  ["homework", "HOMEWORK HELPED???", "Use a pencil to launch an egg."],
+  ["scary", "ScArY!!!!", "Scare an egg with a fried egg."],
+  ["panic", "THEY'RE ALL SCARED", "Scare five eggs."],
+  ["mouth_found", "THAT'S A BIG MOUTH", "Find the grand mouth."],
+  ["mouth", "EAT MEEEEE", "Throw an egg into a mouth."],
+  ["mouth_more", "EAT ME MOOOOORE", "Feed five eggs to mouths."],
+  ["undefined", "UNDEFINED OBJECT", "Find the forbidden button."],
+  ["pressed", "OH COME ON YOU PRESSED IT", "Press the button and summon UNDEF."],
+  ["egg_button", "egg pressed it", "Drag an egg onto the button."],
+  ["egg_button_throw", "egg pressed it stronger", "Throw an egg onto the button."],
+  ["explorer", "ScRoLlEd ToO fAr", "Travel very far across the desk."],
+  ["magnetic", "EgGnEtIc", "Let a magnet pull an egg."],
+  ["sticky", "STICKY SITUATION", "Get an egg stuck on a note."],
+  ["windy", "WHEEEEEEEE", "Let a fan blow an egg."],
+  ["portal_trip", "EgG-WHERE?!", "Send an egg through a portal."],
+  ["too_fast", "TOO FAST FOR AN EGG", "Bounce or launch an egg at ridiculous speed."],
+  ["tourist", "DESK TOURIST", "Visit four biomes."],
+  ["all_biomes", "WHERE IS THE DESK???", "Visit every biome."],
+  ["cave_found", "A cAvE", "Enter a cave biome."],
+  ["evil", "i am evil", "Butcher a giraffe."],
+  ["animal_money", "YOU MADE MONEY OFF AN ANIMAL!!!", "List meat for sale at a store."],
+  ["electrocuted", "ELEGGTROCUTED", "Give an egg to an electric giraffe."],
+  ["hard", "STILL HARD NOOO", "Complete ten quests."],
+  ["medium", "Medium isn't bad", "Complete twenty-five quests."],
+  ["easy", "EASY YAAAAAY", "Complete fifty quests."]
+];
+
+let state = "title";
+let sceneSwitchDelay = 0;
+let slot = 0;
+let questCount = 0;
+let completed = {};
+let repeated = {};
+let visited = {};
+let eggs = [];
+let eggAgeClock = 0;
+let eggListVersion = 0;
+let activeEggVersion = -1;
+let activeEggTimer = 0;
+let activeEggCamX = NaN;
+let activeEggCamY = NaN;
+let activeEggIndices = [];
+let objects = [];
+let objectCells = {};
+let nearbyObjectCells = {};
+let caveChunks = {};
+let caveChunkCount = 0;
+let caveChunkCache = {};
+let caveChunkCacheCount = 0;
+let caveGraphCache = {};
+let caveGraphCacheCount = 0;
+let cam = {x:0, y:0};
+let cursor = {x:320, y:240, vx:0, vy:0};
+let held = -1;
+let panning = false;
+let pointerDown = false;
+let lastPointer = {x:320, y:240};
+let lastChunkX = 9999;
+let lastChunkY = 9999;
+let lastDiscoveryX = 999999;
+let lastDiscoveryY = 999999;
+let biome = "plains";
+let fightBiome = "plains";
+let biomeFade = 1;
+let previousBiome = "plains";
+let deskSkyActive = "";
+let renderedDeskEggKey = "";
+let renderedFryBarKey = "";
+let renderedBossEggCount = -1;
+let lastEffectKey = "__initial";
+let lastBreakoutFrame = -1;
+let spawnClock = 0;
+let saveClock = 8;
+let saveFailed = false;
+let toastClock = 0;
+let broken = 0;
+let fried = 0;
+let fed = 0;
+let throws = 0;
+let scares = 0;
+let paused = false;
+let pauseSelection = 0;
+let questOpen = false;
+let questSelection = 0;
+let controlsOpen = false;
+let menuLatch = false;
+let menuCooldown = 0;
+let menuReleaseTime = 0;
+let questTiles = [];
+let alertNodes = [];
+let scareMarkNodes = [];
+let music = 0;
+let musicPath = "";
+let musicRetry = 0;
+let fight = null;
+let summonButton = null;
+let blackHole = null;
+let finalFight = null;
+let finalWon = false;
+let finalVisualKey = "";
+let finalWaveSamples = {};
+let finalModeShown = null;
+let renderedHoleKey = "";
+let specialRenderX = NaN;
+let specialRenderY = NaN;
+let specialRenderChunkX = NaN;
+let specialRenderChunkY = NaN;
+let bossEggsData = [];
+let bossHeld = -1;
+let bossPauseSelection = 0;
+let windSlots = [];
+let money = 0;
+let grabberOwned = false;
+let portablePanOwned = false;
+let giraffeAlive = false;
+let electricGiraffeAlive = false;
+let inventoryEggs = [];
+let meatPieces = 0;
+let electricMeatPieces = 0;
+let piecesOnSale = 0;
+let saleClock = 0;
+let meatOnSale = 0;
+let electricMeatOnSale = 0;
+let meatSaleClock = 0;
+let secretUnlocked = false;
+let cyanEncounter = false;
+let heldMeat = "";
+let secretOvercharge = false;
+let secretClock = 0;
+let secretSound = 0;
+let memeSound = 0;
+let memeClock = 0;
+let creditsMode = "";
+let creditsOffset = 480;
+const MEME_SOUNDS = ["audio/meme-shocked.wav","audio/meme-video.wav",
+  "audio/meme-oh-my-god.wav","audio/meme-faaah.wav",
+  "audio/meme-cat-laugh.wav","audio/meme-phone.wav"];
+let portableFryEgg = null;
+let portableFryTime = 0;
+let marketOpen = false;
+let marketTab = "shop";
+let marketSelection = 0;
+let marketMessage = "";
+let pickerOpen = false;
+let pickerTab = 0;
+let pickerPage = 0;
+let pickerSelection = 0;
+let pickerMessage = "";
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function dist2(x1, y1, x2, y2) { const x=x1-x2; const y=y1-y2; return x*x+y*y; }
+function random(a, b) { return a + Math.random() * (b-a); }
+function hash(x, y, salt) {
+  const n = Math.sin(x*127.1 + y*311.7 + salt*74.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+function inside(x, y, a, b, w, h) { return x>=a && x<a+w && y>=b && y<b+h; }
+function screenLeftEdge() {
+  return Math.round(Mouse.display==="tv"?Screen.tvLeft:Screen.gamePadLeft);
+}
+function screenRightOffset() {
+  const right=Mouse.display==="tv"?
+    Screen.tvLeft+Screen.tvWidth:Screen.gamePadLeft+Screen.gamePadWidth;
+  return Math.round(right-W);
+}
+function overBackpack(x,y) { return inside(x,y,520+screenRightOffset(),408,110,62); }
+function refreshScreenLayout() {
+  if(VIEW_LEFT===Screen.left && VIEW_RIGHT===Screen.right) return;
+  VIEW_LEFT=Screen.left;
+  VIEW_RIGHT=Screen.right;
+  VIEW_HALF=Screen.width/2;
+  MAX_CAMERA_EGGS=Math.round(16*Screen.width/W);
+  lastChunkX=9999;
+  activeEggVersion=-1;
+  specialRenderX=NaN;
+  renderedDeskEggKey="__resize";
+  if(state==="desk") {
+    cursor.x=clamp(cursor.x,VIEW_LEFT,VIEW_RIGHT);
+    lastPointer.x=cursor.x;
+  }
+}
+function screenX(wx) { return wx-cam.x+320; }
+function screenY(wy) { return wy-cam.y+240; }
+function worldX(sx) { return sx+cam.x-320; }
+function worldY(sy) { return sy+cam.y-240; }
+function refreshActiveEggIndices() {
+  if(activeEggVersion===eggListVersion && activeEggTimer>0 &&
+      Math.abs(cam.x-activeEggCamX)<70 && Math.abs(cam.y-activeEggCamY)<70)
+    return;
+  activeEggIndices=[];
+  const hole=blackHole;
+  const holeReach=hole?hole.size*0.6+145:0;
+  const chase=finalFight;
+  for(let i=eggs.length-1;i>=0;i--) {
+    const e=eggs[i];
+    let active=i===held || e.portalFlight>0 ||
+        (Math.abs(e.x-cam.x)<W+180 && Math.abs(e.y-cam.y)<H+180) ||
+        (hole && Math.abs(e.x-hole.x)<holeReach &&
+          Math.abs(e.y-hole.y)<holeReach);
+    if(!active && chase) {
+      active=Math.abs(e.x-chase.x)<240 && Math.abs(e.y-chase.y)<240;
+      if(!active) for(const wave of chase.waves) {
+        if(Math.abs(e.x-wave.x)<650 && Math.abs(e.y-wave.y)<650) {
+          active=true;break;
+        }
+      }
+    }
+    if(active) activeEggIndices.push(i);
+  }
+  activeEggVersion=eggListVersion;
+  activeEggTimer=0.35;
+  activeEggCamX=cam.x;activeEggCamY=cam.y;
+}
+function centered(batch, x, y, w, h, options) {
+  const config = options || {};
+  batch.add({x:x-w/2, y:y-h/2, width:w, height:h,
+    rotation:config.rotation || 0, opacity:config.opacity === undefined ? 1 : config.opacity,
+    tint:config.tint || "#ffffffff"});
+}
+function spriteSpec(x,y,w,h,rotation,opacity) {
+  return {x:x-w/2,y:y-h/2,width:w,height:h,
+    rotation:rotation || 0,opacity:opacity===undefined?1:opacity};
+}
+function clearDeskBatches() {
+  deskPans.clear(); deskMouths.clear(); deskBumpers.clear(); deskButtons.clear();
+  deskMaps.clear(); deskMagnets.clear(); deskNotes.clear(); deskFans.clear();
+  deskBooks.clear(); deskBricks.clear(); deskPencils.clear();deskPortals.clear();
+  deskStores.clear();
+}
+function isCaveBiome(kind) {
+  return kind==="cave" || kind==="fryingCave" || kind==="portalCave";
+}
+function caveDegree(mask) {
+  let count=0;
+  for(const bit of [1,2,4,8]) if(caveHasExit(mask,bit)) count++;
+  return count;
+}
+function caveHasExit(mask,bit) { return Math.floor(mask/bit)%2===1; }
+function caveAddExit(mask,bit) {
+  return caveHasExit(mask,bit)?mask:mask+bit;
+}
+function caveNeighbors(i) {
+  const row=Math.floor(i/3);const column=i%3;
+  const result=[];
+  if(row>0) result.push([i-3,1,4]);
+  if(column<2) result.push([i+1,2,8]);
+  if(row<2) result.push([i+3,4,1]);
+  if(column>0) result.push([i-1,8,2]);
+  return result;
+}
+function caveRegionGraph(rx,ry,kind) {
+  const key=rx+","+ry+","+kind;
+  if(caveGraphCache[key]) return caveGraphCache[key];
+  // A seeded spanning tree connects all nine rooms. Extra edges turn the
+  // frying and portal caves into loops; the ordinary cave retains dead ends.
+  const exits=[0,0,0,0,0,0,0,0,0];
+  const visited=[false,false,false,false,false,false,false,false,false];
+  const corners=[0,2,6,8];
+  const protectedCorner=corners[Math.floor(hash(rx,ry,800)*4)];
+  visited[4]=true;
+  for(let step=0;step<8;step++) {
+    let best=null;let bestScore=2;
+    for(let i=0;i<9;i++) if(visited[i] && (kind!=="cave" || i!==protectedCorner))
+      for(const edge of caveNeighbors(i)) if(!visited[edge[0]]) {
+        const score=hash(rx*17+i,ry*23+edge[0],801);
+        if(score<bestScore) {bestScore=score;best=[i,edge];}
+      }
+    const from=best[0];const edge=best[1];
+    exits[from]=caveAddExit(exits[from],edge[1]);
+    exits[edge[0]]=caveAddExit(exits[edge[0]],edge[2]);
+    visited[edge[0]]=true;
+  }
+  if(kind!=="cave") for(let i=0;i<9;i++) if(caveDegree(exits[i])===1) {
+    let best=null;let bestScore=2;
+    for(const edge of caveNeighbors(i)) if(!caveHasExit(exits[i],edge[1])) {
+      const score=hash(rx*29+i,ry*31+edge[0],802);
+      if(score<bestScore) {bestScore=score;best=edge;}
+    }
+    if(best) {
+      exits[i]=caveAddExit(exits[i],best[1]);
+      exits[best[0]]=caveAddExit(exits[best[0]],best[2]);
+    }
+  }
+  for(const gate of [[1,1],[5,2],[7,4],[3,8]])
+    exits[gate[0]]=caveAddExit(exits[gate[0]],gate[1]);
+  if(caveGraphCacheCount>=32) {caveGraphCache={};caveGraphCacheCount=0;}
+  caveGraphCache[key]=exits;caveGraphCacheCount++;
+  return exits;
+}
+function caveRoutePoint(route,t) {
+  const u=1-t;
+  if(route.length===16) {
+    const weights=[u*u*u*u*u*u*u,7*u*u*u*u*u*u*t,
+      21*u*u*u*u*u*t*t,35*u*u*u*u*t*t*t,
+      35*u*u*u*t*t*t*t,21*u*u*t*t*t*t*t,
+      7*u*t*t*t*t*t*t,t*t*t*t*t*t*t];
+    let x=0;let y=0;
+    for(let i=0;i<8;i++) {x+=route[i*2]*weights[i];y+=route[i*2+1]*weights[i];}
+    return [x,y];
+  }
+  if(route.length===10) return [
+    u*u*u*u*route[0]+4*u*u*u*t*route[2]+6*u*u*t*t*route[4]+
+      4*u*t*t*t*route[6]+t*t*t*t*route[8],
+    u*u*u*u*route[1]+4*u*u*u*t*route[3]+6*u*u*t*t*route[5]+
+      4*u*t*t*t*route[7]+t*t*t*t*route[9]];
+  if(route.length===8) return [u*u*u*route[0]+3*u*u*t*route[2]+
+      3*u*t*t*route[4]+t*t*t*route[6],
+    u*u*u*route[1]+3*u*u*t*route[3]+3*u*t*t*route[5]+t*t*t*route[7]];
+  return [u*u*route[0]+2*u*t*route[2]+t*t*route[4],
+    u*u*route[1]+2*u*t*route[3]+t*t*route[5]];
+}
+function caveRoutes(bendH,bendV,exits,style) {
+  const centerX=CHUNK/2+bendV*38;const centerY=CHUNK/2+bendH*38;
+  const routes=[];
+  if(style===1 && exits===5) {
+    const swing=(bendV<0?-1:1)*(85+Math.abs(bendV)*25)*0.55;
+    return [[250,0,250,70,250+swing,150,250+swing,220,
+      250-swing,280,250-swing,350,250,430,250,500]];
+  }
+  if(style===1 && exits===10) {
+    const swing=(bendH<0?-1:1)*(85+Math.abs(bendH)*25)*0.55;
+    return [[0,250,70,250,150,250+swing,220,250+swing,
+      280,250-swing,350,250-swing,430,250,500,250]];
+  }
+  // Quartic straights lean diagonally in the middle while their endpoints
+  // remain level with neighboring chunks.
+  if(exits===5) return [[250,0,250,85,250+bendV*280,250,250,415,250,500]];
+  if(exits===10) return [[0,250,85,250,250,250+bendH*280,415,250,500,250]];
+  // A single continuous arc makes elbow rooms without a round hub.
+  if(exits===3) return [[250,0,250,150+bendH*45,350+bendV*45,250,500,250]];
+  if(exits===6) return [[500,250,350+bendV*45,250,250,350+bendH*45,250,500]];
+  if(exits===12) return [[250,500,250,350+bendH*45,150+bendV*45,250,0,250]];
+  if(exits===9) return [[0,250,150+bendV*45,250,250,150+bendH*45,250,0]];
+  if(style===1) {
+    const swingV=(bendV<0?-1:1)*(65+Math.abs(bendV)*25);
+    const swingH=(bendH<0?-1:1)*(65+Math.abs(bendH)*25);
+    if(caveHasExit(exits,1)) routes.push([centerX,centerY,centerX+swingV,centerY-85,250,105,250,0]);
+    if(caveHasExit(exits,2)) routes.push([centerX,centerY,centerX+85,centerY+swingH,395,250,500,250]);
+    if(caveHasExit(exits,4)) routes.push([centerX,centerY,centerX-swingV,centerY+85,250,395,250,500]);
+    if(caveHasExit(exits,8)) routes.push([centerX,centerY,centerX-85,centerY-swingH,105,250,0,250]);
+  } else {
+    if(caveHasExit(exits,1)) routes.push([centerX,centerY,250,120,250,0]);
+    if(caveHasExit(exits,2)) routes.push([centerX,centerY,380,250,500,250]);
+    if(caveHasExit(exits,4)) routes.push([centerX,centerY,250,380,250,500]);
+    if(caveHasExit(exits,8)) routes.push([centerX,centerY,120,250,0,250]);
+  }
+  return routes;
+}
+function caveRouteMouth(route,mouths) {
+  const end=route.length-2;
+  if(caveHasExit(mouths,1) &&
+      (route[1]===0 || route[end+1]===0)) return 1;
+  if(caveHasExit(mouths,2) &&
+      (route[0]===500 || route[end]===500)) return 2;
+  if(caveHasExit(mouths,4) &&
+      (route[1]===500 || route[end+1]===500)) return 4;
+  if(caveHasExit(mouths,8) &&
+      (route[0]===0 || route[end]===0)) return 8;
+  return 0;
+}
+function caveSegments(routes,mouths) {
+  const segments=[];
+  for(const route of routes) {
+    const mouth=caveRouteMouth(route,mouths);
+    const extent=mouth?106:CAVE_TUNNEL_HALF;
+    let previous=caveRoutePoint(route,0);
+    const steps=route.length===16?12:route.length===10?10:6;
+    for(let i=1;i<=steps;i++) {
+      const next=caveRoutePoint(route,i/steps);
+      segments.push([previous[0],previous[1],next[0],next[1],
+        Math.min(previous[0],next[0])-extent,
+        Math.max(previous[0],next[0])+extent,
+        Math.min(previous[1],next[1])-extent,
+        Math.max(previous[1],next[1])+extent,mouth,
+        next[0]-previous[0],next[1]-previous[1],
+        dist2(previous[0],previous[1],next[0],next[1])]);
+      previous=next;
+    }
+  }
+  return segments;
+}
+function caveSegmentCells(segments) {
+  const cells={};
+  for(const segment of segments) {
+    const left=clamp(Math.floor(segment[4]/100),0,4);
+    const right=clamp(Math.floor(segment[5]/100),0,4);
+    const top=clamp(Math.floor(segment[6]/100),0,4);
+    const bottom=clamp(Math.floor(segment[7]/100),0,4);
+    for(let y=top;y<=bottom;y++) for(let x=left;x<=right;x++) {
+      const key=x+","+y;
+      if(!cells[key]) cells[key]=[];
+      cells[key].push(segment);
+    }
+  }
+  return cells;
+}
+function caveSegmentDistance2(x,y,segment) {
+  const dx=segment[9];const dy=segment[10];const length=segment[11];
+  const t=length>0?clamp(((x-segment[0])*dx+(y-segment[1])*dy)/length,0,1):0;
+  return dist2(x,y,segment[0]+dx*t,segment[1]+dy*t);
+}
+function caveMouthWidth(t) {
+  const edge=clamp((t-0.8)/0.2,0,1);
+  return CAVE_TUNNEL_HALF+30*(1-Math.sqrt(Math.max(0,1-edge*edge)));
+}
+function caveOpenAt(chunk,x,y,radius) {
+  const clearRadius=CAVE_TUNNEL_HALF-radius;
+  if(clearRadius<=0) return false;
+  let mouthWidth=CAVE_TUNNEL_HALF;
+  if(caveHasExit(chunk.mouths,1)) mouthWidth=caveMouthWidth((300-y)/300);
+  else if(caveHasExit(chunk.mouths,2)) mouthWidth=caveMouthWidth((x-200)/300);
+  else if(caveHasExit(chunk.mouths,4)) mouthWidth=caveMouthWidth((y-200)/300);
+  else if(caveHasExit(chunk.mouths,8)) mouthWidth=caveMouthWidth((300-x)/300);
+  const cellX=Math.floor(x/100);const cellY=Math.floor(y/100);
+  const nearby=chunk.segmentCells[cellX+","+cellY];
+  if(!nearby) return false;
+  for(const segment of nearby) {
+    const width=(segment[8]?mouthWidth:CAVE_TUNNEL_HALF)-radius;
+    if(x>=segment[4]+radius && x<=segment[5]-radius &&
+        y>=segment[6]+radius && y<=segment[7]-radius &&
+        caveSegmentDistance2(x,y,segment)<
+          width*width) return true;
+  }
+  return false;
+}
+function caveWallAtPoint(x,y,radius) {
+  const cx=Math.floor(x/CHUNK);const cy=Math.floor(y/CHUNK);
+  const chunk=caveChunks[cx+","+cy];
+  if(chunk && chunk.corners) {
+    const px=x-cx*CHUNK;const py=y-cy*CHUNK;
+    const edge=108;
+    let corner=0;let centerX=0;let centerY=0;
+    if(px<edge && py<edge) {corner=1;centerX=edge;centerY=edge;}
+    else if(px>CHUNK-edge && py<edge) {
+      corner=2;centerX=CHUNK-edge;centerY=edge;
+    } else if(px>CHUNK-edge && py>CHUNK-edge) {
+      corner=4;centerX=CHUNK-edge;centerY=CHUNK-edge;
+    } else if(px<edge && py>CHUNK-edge) {
+      corner=8;centerX=edge;centerY=CHUNK-edge;
+    }
+    if(corner && caveHasExit(chunk.corners,corner) &&
+        dist2(px,py,centerX,centerY)>(edge+radius)*(edge+radius)) return false;
+  }
+  return !!chunk && !caveOpenAt(chunk,x-cx*CHUNK,y-cy*CHUNK,radius);
+}
+function caveWallOverlaps(x,y,radius) {
+  return caveWallAtPoint(x,y,radius);
+}
+function unstickCaveEgg(e,radius,preserveMotion) {
+  if(!caveWallOverlaps(e.x,e.y,radius)) return;
+  const startX=e.x;const startY=e.y;
+  for(const distance of [50,100,150,200,250,300]) {
+    for(let n=0;n<16;n++) {
+      const angle=n*Math.PI/8;
+      const x=startX+Math.cos(angle)*distance;
+      const y=startY+Math.sin(angle)*distance;
+      if(!caveWallOverlaps(x,y,radius)) {
+        e.x=x;e.y=y;
+        if(!preserveMotion) {e.vx=0;e.vy=0;}
+        return;
+      }
+    }
+  }
+}
+function resolveCaveEggMotion(e,oldX,oldY,radius) {
+  if(caveChunkCount===0) return;
+  const dx=e.x-oldX;const dy=e.y-oldY;
+  const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))/24));
+  let x=oldX;let y=oldY;
+  for(let n=1;n<=steps;n++) {
+    const nextX=oldX+dx*n/steps;
+    const nextY=oldY+dy*n/steps;
+    if(!caveWallOverlaps(nextX,nextY,radius)) {x=nextX;y=nextY;continue;}
+    const clearX=!caveWallOverlaps(nextX,y,radius);
+    const clearY=!caveWallOverlaps(x,nextY,radius);
+    if(clearX && clearY) {
+      if(Math.abs(dx)>Math.abs(dy)) {x=nextX;e.vy=-e.vy*0.6;}
+      else {y=nextY;e.vx=-e.vx*0.6;}
+    } else {
+      if(clearX) x=nextX;
+      if(clearY) y=nextY;
+      if(!clearX) e.vx=-e.vx*0.6;
+      if(!clearY) e.vy=-e.vy*0.6;
+    }
+    e.hit=0.12;
+    break;
+  }
+  e.x=x;e.y=y;
+}
+function buildCaveChunk(cx,cy,kind,image) {
+  const key=cx+","+cy;
+  let chunk=caveChunkCache[key];
+  if(!chunk) {
+  const rx=Math.floor((cx+1)/3);const ry=Math.floor((cy+1)/3);
+  const localX=cx-(rx*3-1);const localY=cy-(ry*3-1);
+  const graph=caveRegionGraph(rx,ry,kind);
+  const exits=graph[localY*3+localX];
+  let mouths=0;
+  if(localX===1 && localY===0 && !isCaveBiome(regionBiome(rx,ry-1))) mouths+=1;
+  if(localX===2 && localY===1 && !isCaveBiome(regionBiome(rx+1,ry))) mouths+=2;
+  if(localX===1 && localY===2 && !isCaveBiome(regionBiome(rx,ry+1))) mouths+=4;
+  if(localX===0 && localY===1 && !isCaveBiome(regionBiome(rx-1,ry))) mouths+=8;
+  const clearNorth=!isCaveBiome(regionBiome(rx,ry-1));
+  const clearEast=!isCaveBiome(regionBiome(rx+1,ry));
+  const clearSouth=!isCaveBiome(regionBiome(rx,ry+1));
+  const clearWest=!isCaveBiome(regionBiome(rx-1,ry));
+  let corners=0;
+  if(localX===0 && localY===0 && clearNorth && clearWest) corners+=1;
+  if(localX===2 && localY===0 && clearNorth && clearEast) corners+=2;
+  if(localX===2 && localY===2 && clearSouth && clearEast) corners+=4;
+  if(localX===0 && localY===2 && clearSouth && clearWest) corners+=8;
+  const bendH=(Math.floor(hash(cx,cy,603)*201)-100)/100;
+  const bendV=(Math.floor(hash(cx,cy,604)*201)-100)/100;
+  const style=hash(cx,cy,605)<0.55?1:0;
+  const routes=caveRoutes(bendH,bendV,exits,style);
+  const segments=caveSegments(routes,mouths);
+  chunk={kind:kind,bendH:bendH,bendV:bendV,
+    exits:exits,mouths:mouths,corners:corners,style:style,
+    routes:routes,segments:segments,segmentCells:caveSegmentCells(segments)};
+  chunk.source="procedural:cave:"+String(bendH)+":"+String(bendV)+":"+
+    String(exits)+":"+String(mouths)+":"+String(corners)+":"+String(style);
+  if(caveChunkCacheCount>=48) {caveChunkCache={};caveChunkCacheCount=0;}
+  caveChunkCache[key]=chunk;caveChunkCacheCount++;
+  }
+  caveChunks[key]=chunk;
+  caveChunkCount++;
+  image.x=cx*CHUNK;image.y=cy*CHUNK;
+  image.src=chunk.source;
+  image.visible=true;
+}
+function setWindParticles(active) {
+  if(!active) for(const slot of windSlots) slot.node.emitting=false;
+}
+function updateWindParticles() {
+  for(const slot of windSlots) {
+    if(slot.x===null) continue;
+    const sx=screenX(slot.x);const sy=screenY(slot.y);
+    let stillHere=false;
+    for(const fan of objects) if(fan.kind==="fan" && fan.x===slot.x && fan.y===slot.y) {
+      stillHere=true;break;
+    }
+    if(!stillHere || sx<VIEW_LEFT-65 || sx>VIEW_RIGHT+65 || sy<-65 || sy>H+65) {
+      slot.x=null;slot.y=null;slot.node.emitting=false;
+    }
+  }
+  for(const fan of objects) {
+    if(fan.kind!=="fan") continue;
+    const sx=screenX(fan.x);const sy=screenY(fan.y);
+    if(sx<VIEW_LEFT-45 || sx>VIEW_RIGHT+45 || sy<-45 || sy>H+45) continue;
+    let assigned=false;
+    for(const slot of windSlots) if(slot.x===fan.x && slot.y===fan.y) {
+      assigned=true;break;
+    }
+    if(assigned) continue;
+    for(const slot of windSlots) if(slot.x===null) {
+      slot.x=fan.x;slot.y=fan.y;
+      slot.dx=fan.pushX;slot.dy=fan.pushY;
+      slot.node.rotation=fan.rotation;
+      slot.node.spin=0;
+      break;
+    }
+  }
+  for(const slot of windSlots) if(slot.x!==null) {
+    slot.node.x=screenX(slot.x+slot.dx*30);
+    slot.node.y=screenY(slot.y+slot.dy*30);
+    if(!slot.node.emitting) slot.node.emitting=true;
+  }
+}
+function setDeskPauseVisible(value) {
+  for(const node of [deskPauseScrim,deskPauseCard,deskPauseTitle,deskResume,
+    deskQuestMenu,deskShopMenu,deskBagMenu,deskSaveHome,deskControls,deskPauseHint]) node.visible=value;
+}
+function setMarketVisible(value) {
+  for(const node of [marketScrim,marketCard,marketTitle,marketBalance,
+    marketShopTab,marketBagTab,marketInfoPanel,marketInfo,
+    marketStatus,marketHint,marketClose,
+    marketFryTrack,marketFryFill]) node.visible=value;
+  for(const node of [marketOption0,marketOption1,marketOption2,
+    marketOption3,marketOption4,marketOption5]) node.visible=value;
+  for(const node of [marketItemIcon0,marketItemIcon1,marketItemIcon2,
+    marketItemIcon3,marketItemIcon4,marketItemIcon5]) node.visible=value;
+}
+function setSellPickerVisible(value) {
+  for(const node of [pickerScrim,pickerCard,pickerTitle,pickerBalance,pickerClose,
+    pickerTabEggs,pickerTabFood,pickerTabGear,pickerStatus,pickerPrev,
+    pickerPageText,pickerNext,pickerHint]) node.visible=value;
+  if(!value) {
+    for(const node of [pickerTile0,pickerTile1,pickerTile2,pickerTile3,
+      pickerTile4,pickerTile5,pickerIcon0,pickerIcon1,pickerIcon2,
+      pickerIcon3,pickerIcon4,pickerIcon5,pickerLabel0,pickerLabel1,
+      pickerLabel2,pickerLabel3,pickerLabel4,pickerLabel5,pickerEmpty])
+      node.visible=false;
+  }
+}
+function setQuestsVisible(value) {
+  for(const node of [deskQuestScrim,deskQuestCard,deskQuestTitle,questDetail,
+    questDetailPanel,questPrev,questNext,questPageText,deskQuestHint]) node.visible=value;
+  for(const node of questTiles) node.visible=value;
+}
+function setFightPauseVisible(value) {
+  for(const node of [fightPauseScrim,fightPauseCard,fightPauseTitle,fightResume,
+    fightRestart,fightDesk,fightControls,fightPauseHint]) node.visible=value;
+}
+function setResultVisible(value) {
+  for(const node of [fightResultScrim,fightResultCard,resultTitle,resultDetail,
+    resultDesk]) node.visible=value;
+}
+function setFinalWinVisible(value) {
+  for(const node of [finalWin,finalWinScrim,finalWinCard,finalWinTitle,finalWinDetail,
+    finalWinContinue]) node.visible=value;
+}
+
+function regionBiome(rx, ry) {
+  if (rx === 0 && ry === 0) return "plains";
+  if (rx === 1 && ry === 1) return "cave";
+  if (rx === 1 && ry === -1) return "fryingCave";
+  if (rx === -1 && ry === 1) return "portalCave";
+  const r=hash(rx,ry,91);
+  if(r<0.22) return "plains";
+  if(r<0.34) return "pinball";
+  if(r<0.47) return "frying";
+  if(r<0.58) return "magnet";
+  if(r<0.69) return "sticky";
+  if(r<0.78) return "wind";
+  if(r<0.86) return "portal";
+  if(r<0.92) return "cave";
+  return r<0.96?"fryingCave":"portalCave";
+}
+function biomeAt(x,y) {
+  return regionBiome(Math.floor((Math.floor(x/CHUNK)+1)/3),
+                     Math.floor((Math.floor(y/CHUNK)+1)/3));
+}
+function batchFor(kind) {
+  if(kind==="pan") return deskPans;
+  if(kind==="mouth") return deskMouths;
+  if(kind==="bumper") return deskBumpers;
+  if(kind==="button") return deskButtons;
+  if(kind==="map") return deskMaps;
+  if(kind==="magnet") return deskMagnets;
+  if(kind==="sticky") return deskNotes;
+  if(kind==="fan") return deskFans;
+  if(kind==="book") return deskBooks;
+  if(kind==="brick") return deskBricks;
+  if(kind==="portal") return deskPortals;
+  if(kind==="store") return deskStores;
+  return deskPencils;
+}
+function addObject(kind,x,y,radius) {
+  const object={kind:kind,x:x,y:y,r:radius};
+  object.spawnHalf=kind==="mouth"?radius*1.25:radius;
+  if(kind==="fan") {
+    const angle=hash(x,y,301)*Math.PI*2;
+    object.pushX=Math.cos(angle);object.pushY=Math.sin(angle);
+    object.rotation=angle*180/Math.PI+90;
+    object.spawnHalf=radius*(Math.abs(Math.cos(angle))+Math.abs(Math.sin(angle)));
+  }
+  objects.push(object);
+  const key=Math.floor(x/OBJECT_CELL)+","+Math.floor(y/OBJECT_CELL);
+  if(!objectCells[key]) objectCells[key]=[];
+  objectCells[key].push(object);
+  const size=kind==="mouth"?radius*2.5:radius*2;
+  const half=object.spawnHalf;
+  const left=lastChunkX*CHUNK-VIEW_HALF;
+  const top=lastChunkY*CHUNK-H/2;
+  if(x+half>=left && x-half<=left+CHUNK+Screen.width &&
+      y+half>=top && y-half<=top+CHUNK+H)
+    centered(batchFor(kind),x,y,size,size,{rotation:object.rotation || 0});
+  return object;
+}
+function nearbyObjectsFor(x,y) {
+  const cellX=Math.floor(x/OBJECT_CELL);
+  const cellY=Math.floor(y/OBJECT_CELL);
+  const key=cellX+","+cellY;
+  let nearby=nearbyObjectCells[key];
+  if(nearby) return nearby;
+  nearby=[];
+  // World objects are rebuilt only at chunk crossings. Cache the same
+  // row-major neighborhood that collision checks previously assembled for
+  // every egg on every frame.
+  for(let row=cellY-1;row<=cellY+1;row++)
+    for(let column=cellX-1;column<=cellX+1;column++) {
+      const objectsHere=objectCells[column+","+row];
+      if(objectsHere) for(const object of objectsHere) nearby.push(object);
+    }
+  nearbyObjectCells[key]=nearby;
+  return nearby;
+}
+function addCaveObject(kind,cx,cy,index,radius) {
+  const chunk=caveChunks[cx+","+cy];
+  for(let n=0;n<36;n++) {
+    const route=chunk.routes[Math.floor(hash(cx,cy,700+index*29+n)*chunk.routes.length)];
+    const t=0.18+hash(cx,cy,990+index*41+n)*0.72;
+    const point=caveRoutePoint(route,t);
+    const x=cx*CHUNK+point[0];const y=cy*CHUNK+point[1];
+    if(caveWallOverlaps(x,y,radius+5)) continue;
+    let occupied=false;
+    const cellX=Math.floor(x/OBJECT_CELL);
+    const cellY=Math.floor(y/OBJECT_CELL);
+    for(let row=cellY-1;row<=cellY+1 && !occupied;row++)
+      for(let column=cellX-1;column<=cellX+1 && !occupied;column++) {
+        const nearby=objectCells[column+","+row];
+        if(!nearby) continue;
+        for(const o of nearby) {
+          const reach=radius+o.r+18;
+          if(dist2(x,y,o.x,o.y)<reach*reach) {occupied=true;break;}
+        }
+      }
+    if(!occupied) return addObject(kind,x,y,radius);
+  }
+  return null;
+}
+function refreshWorld() {
+  const cx=Math.floor(cam.x/CHUNK); const cy=Math.floor(cam.y/CHUNK);
+  if(cx===lastChunkX && cy===lastChunkY) return;
+  lastChunkX=cx; lastChunkY=cy;
+  objects=[];objectCells={};nearbyObjectCells={};
+  caveChunks={};caveChunkCount=0;clearDeskBatches();
+  const caveImages=[deskCaveChunk0,deskCaveChunk1,deskCaveChunk2,
+    deskCaveChunk3,deskCaveChunk4,deskCaveChunk5,
+    deskCaveChunk6,deskCaveChunk7,deskCaveChunk8];
+  for(const image of caveImages) image.visible=false;
+  for(let y=cy-1;y<=cy+1;y++) for(let x=cx-1;x<=cx+1;x++) {
+    const kind=regionBiome(Math.floor((x+1)/3),Math.floor((y+1)/3));
+    // A 3x3 camera window never contains duplicate modulo-3 coordinates.
+    // Keep each tile on the same image node while crossing a chunk boundary;
+    // only the newly entered row or column needs a different GPU texture.
+    const slot=((y%3+3)%3)*3+(x%3+3)%3;
+    if(isCaveBiome(kind)) buildCaveChunk(x,y,kind,caveImages[slot]);
+  }
+  const landmarks=[
+    ["map",540,-280,65], ["pan",-775,410,75],
+    ["button",1160,180,70], ["mouth",-1430,-480,115],
+    ["book",270,505,55], ["brick",-410,-420,55], ["pencil",1650,650,55],
+    ["store",200,120,55]
+  ];
+  for(const item of landmarks) {
+    if(Math.abs(item[1]-cam.x)<950 && Math.abs(item[2]-cam.y)<800)
+      addObject(item[0],item[1],item[2],item[3]);
+  }
+  for(let y=cy-1;y<=cy+1;y++) for(let x=cx-1;x<=cx+1;x++) {
+    const kind=regionBiome(Math.floor((x+1)/3),Math.floor((y+1)/3));
+    const ox=x*CHUNK; const oy=y*CHUNK;
+    if(kind==="pinball") {
+      for(let n=0;n<6;n++) addObject("bumper",ox+62+n*71,oy+250+Math.sin(n*1.7+hash(x,y,12)*4)*46,23);
+      if(hash(x,y,13)>0.42) addObject("mouth",ox+110+hash(x,y,14)*290,oy+130+hash(x,y,15)*240,38);
+    } else if(kind==="frying") {
+      for(let row=0;row<3;row++) for(let column=0;column<4;column++) {
+        const n=row*4+column;
+        if(hash(x,y,110+n)<0.65) addObject("pan",ox+65+column*116,oy+75+row*155,38);
+      }
+    } else if(kind==="magnet") {
+      for(let n=0;n<3;n++) addObject("magnet",ox+90+n*145,oy+160+hash(x,y,120+n)*180,35);
+    } else if(kind==="sticky") {
+      for(let n=0;n<5;n++) addObject("sticky",ox+70+(n%3)*155,oy+95+Math.floor(n/3)*185,36);
+    } else if(kind==="wind") {
+      for(let n=0;n<3;n++) addObject("fan",ox+85+n*155,oy+160+hash(x,y,130+n)*150,40);
+    } else if(kind==="portal") {
+      const first=addObject("portal",ox+100+hash(x,y,310)*90,
+        oy+85+hash(x,y,311)*95,42);
+      const second=addObject("portal",ox+315+hash(x,y,312)*85,
+        oy+310+hash(x,y,313)*95,42);
+      first.targetX=second.x;first.targetY=second.y;
+      second.targetX=first.x;second.targetY=first.y;
+    } else if(kind==="fryingCave") {
+      for(let n=0;n<4;n++) addCaveObject("pan",x,y,n,38);
+    } else if(kind==="portalCave") {
+      const first=addCaveObject("portal",x,y,0,42);
+      const second=addCaveObject("portal",x,y,1,42);
+      if(first && second) {
+        first.targetX=second.x;first.targetY=second.y;
+        second.targetX=first.x;second.targetY=first.y;
+      }
+    } else if(kind==="cave") {
+      addCaveObject("mouth",x,y,0,38);
+      addCaveObject("book",x,y,1,38);
+    } else {
+      if(hash(x,y,200)<0.55) addObject("mouth",ox+140+hash(x,y,201)*190,oy+120+hash(x,y,202)*260,65);
+      const types=["book","brick","pencil"];
+      for(let n=0;n<2;n++) addObject(types[Math.floor(hash(x,y,210+n)*3)],ox+100+n*230,oy+250+hash(x,y,220+n)*140,42);
+      if(hash(x,y,243)<0.14) addObject("store",ox+90+hash(x,y,244)*320,
+        oy+95+hash(x,y,245)*310,48);
+    }
+    if(kind!=="magnet" && kind!=="wind" &&
+        hash(x,y,240)<(kind==="plains"?0.22:isCaveBiome(kind)?0.10:0.15)) {
+      if(isCaveBiome(kind)) addCaveObject("button",x,y,20,42);
+      else addObject("button",ox+120+hash(x,y,241)*260,
+        oy+130+hash(x,y,242)*230,42);
+    }
+  }
+  for(const e of eggs) if(Math.abs(e.x-cam.x)<W && Math.abs(e.y-cam.y)<H)
+    unstickCaveEgg(e,(e.big?37:26)*e.size);
+}
+
+function refreshSpecialWorldBatches() {
+  // The ordinary desk keeps a wide preload area. During the hole and chase,
+  // only draw objects near the camera; their world/collision data stays intact.
+  if(Math.abs(cam.x-specialRenderX)<96 && Math.abs(cam.y-specialRenderY)<96 &&
+      specialRenderChunkX===lastChunkX && specialRenderChunkY===lastChunkY) return;
+  specialRenderX=cam.x;specialRenderY=cam.y;
+  specialRenderChunkX=lastChunkX;specialRenderChunkY=lastChunkY;
+  clearDeskBatches();
+  for(const o of objects) {
+    const half=o.spawnHalf;
+    if(o.x+half<cam.x-VIEW_HALF-120 || o.x-half>cam.x+VIEW_HALF+120 ||
+        o.y+half<cam.y-H/2-120 || o.y-half>cam.y+H/2+120) continue;
+    const size=o.kind==="mouth"?o.r*2.5:o.r*2;
+    centered(batchFor(o.kind),o.x,o.y,size,size,{rotation:o.rotation || 0});
+  }
+}
+
+function saveName(n) { return "an-egg-slot-"+String(n+1)+".txt"; }
+function secretName(n) { return "an-egg-secret-"+String(n+1)+".txt"; }
+function saveGame() {
+  if(finalFight) return false;
+  if(slot<0) return;
+  let lines=["value|format|2","value|quests|"+questCount,"value|broken|"+broken,
+    "value|fried|"+fried,"value|mouth|"+fed,"value|throws|"+throws,
+    "value|scares|"+scares,"value|cameraX|"+cam.x,"value|cameraY|"+cam.y,
+    "value|money|"+money,
+    "value|grabber|"+(grabberOwned?1:0),
+    "value|portablePan|"+(portablePanOwned?1:0),
+    "value|giraffe|"+(giraffeAlive?1:0),
+    "value|electricGiraffe|"+(electricGiraffeAlive?1:0),
+    "value|secretUnlocked|"+(secretUnlocked?1:0),
+    "value|meatPieces|"+meatPieces,
+    "value|electricMeatPieces|"+electricMeatPieces,
+    "value|piecesOnSale|"+piecesOnSale,
+    "value|saleClock|"+saleClock,"value|meatOnSale|"+meatOnSale,
+    "value|electricMeatOnSale|"+electricMeatOnSale,
+    "value|meatSaleClock|"+meatSaleClock,
+    "value|portableFryTime|"+portableFryTime];
+  if(portableFryEgg) lines.push("frying|0|"+[portableFryEgg.big?1:0,
+    portableFryEgg.size].join(","));
+  for(let i=0;i<inventoryEggs.length;i++) {
+    const e=inventoryEggs[i];
+    lines.push("bagEgg|"+String(i)+"|"+[e.fried?1:0,e.big?1:0,e.size].join(","));
+  }
+  if(blackHole) lines.push("value|holeX|"+blackHole.x,"value|holeY|"+blackHole.y,
+    "value|holeSize|"+blackHole.size);
+  if(finalWon) lines.push("value|finalWon|1");
+  for(const id of Object.keys(completed)) if(completed[id]) lines.push("done|"+id+"|1");
+  for(const id of Object.keys(repeated)) lines.push("repeat|"+id+"|"+repeated[id]);
+  for(const id of Object.keys(visited)) if(visited[id]) lines.push("biome|"+id+"|1");
+  for(let i=0;i<eggs.length;i++) {
+    const e=eggs[i];
+    const idle=Math.max(0,eggAgeClock-e.lastGrabAt);
+    lines.push("egg|"+String(i)+"|"+[e.x,e.y,e.vx,e.vy,e.angle,e.fried?1:0,e.morph,e.scared?1:0,idle,e.size,e.big?1:0,e.bounceBoost?1:0].join(","));
+  }
+  const saved=Storage.write(saveName(slot),lines.join("\n"));
+  saveFailed=!saved;
+  if(saveFailed) {
+    saveClock=30;
+    deskToast.text="SAVE FAILED — CHECK SD CARD";
+    toastClock=5;
+  }
+  return saved;
+}
+function loadGame(n) {
+  stopMemeSound();
+  slot=n; questCount=0; completed={}; repeated={}; visited={}; eggs=[];
+  eggAgeClock=0;eggListVersion++;activeEggVersion=-1;activeEggTimer=0;
+  fight=null;finalFight=null;blackHole=null;finalWon=false;summonButton=null;
+  broken=0;fried=0;fed=0;throws=0;scares=0;cam={x:0,y:0};
+  money=0;grabberOwned=false;portablePanOwned=false;
+  giraffeAlive=false;electricGiraffeAlive=false;
+  inventoryEggs=[];meatPieces=0;electricMeatPieces=0;piecesOnSale=0;
+  saleClock=0;meatOnSale=0;electricMeatOnSale=0;meatSaleClock=0;
+  heldMeat="";secretOvercharge=false;creditsMode="";cyanEncounter=false;
+  const secretRecord=Storage.read(secretName(n),"");
+  secretUnlocked=secretRecord==="1";
+  portableFryEgg=null;portableFryTime=0;
+  marketOpen=false;marketTab="shop";marketSelection=0;marketMessage="";
+  pickerOpen=false;pickerTab=0;pickerPage=0;pickerSelection=0;pickerMessage="";
+  const data=Storage.read(saveName(n),"");
+  const oldSave=data!=="" && !data.includes("value|format|2");
+  let savedMoney=-1;let legacyCoins=0;let legacyDollars=0;
+  for(const line of data.split("\n")) {
+    const fields=line.split("|");
+    if(fields.length<3) continue;
+    if(fields[0]==="value") {
+      const value=Number(fields[2]);
+      if(fields[1]==="quests") questCount=value;
+      if(fields[1]==="broken") broken=value;
+      if(fields[1]==="fried") fried=value;
+      if(fields[1]==="mouth") fed=value;
+      if(fields[1]==="throws") throws=value;
+      if(fields[1]==="scares") scares=value;
+      if(fields[1]==="cameraX") cam.x=oldSave?value*0.5:value;
+      if(fields[1]==="cameraY") cam.y=oldSave?value*2/3:value;
+      if(fields[1]==="holeX") {if(!blackHole) blackHole={x:0,y:0,size:90};blackHole.x=value;}
+      if(fields[1]==="holeY") {if(!blackHole) blackHole={x:0,y:0,size:90};blackHole.y=value;}
+      if(fields[1]==="holeSize") {if(!blackHole) blackHole={x:0,y:0,size:90};blackHole.size=value;}
+      if(fields[1]==="finalWon") finalWon=value===1;
+      if(fields[1]==="money") savedMoney=Math.max(0,Math.floor(value));
+      if(fields[1]==="coins") legacyCoins=Math.max(0,Math.floor(value));
+      if(fields[1]==="dollars") legacyDollars=Math.max(0,Math.floor(value));
+      if(fields[1]==="grabber") grabberOwned=value===1;
+      if(fields[1]==="portablePan") portablePanOwned=value===1;
+      if(fields[1]==="giraffe") giraffeAlive=value===1;
+      if(fields[1]==="electricGiraffe") electricGiraffeAlive=value===1;
+      if(fields[1]==="secretUnlocked" && secretRecord==="")
+        secretUnlocked=value===1;
+      if(fields[1]==="meatPieces") meatPieces=Math.max(0,Math.floor(value));
+      if(fields[1]==="electricMeatPieces")
+        electricMeatPieces=Math.max(0,Math.floor(value));
+      if(fields[1]==="piecesOnSale") piecesOnSale=Math.max(0,Math.floor(value));
+      if(fields[1]==="saleClock") saleClock=clamp(value,0,SALE_INTERVAL);
+      if(fields[1]==="meatOnSale") meatOnSale=Math.max(0,Math.floor(value));
+      if(fields[1]==="electricMeatOnSale")
+        electricMeatOnSale=Math.max(0,Math.floor(value));
+      if(fields[1]==="meatSaleClock") meatSaleClock=clamp(value,0,SALE_INTERVAL);
+      if(fields[1]==="portableFryTime") portableFryTime=clamp(value,0,2.4);
+    } else if(fields[0]==="done") completed[fields[1]]=true;
+    else if(fields[0]==="repeat") repeated[fields[1]]=Number(fields[2]);
+    else if(fields[0]==="biome") visited[fields[1]]=true;
+    else if(fields[0]==="bagEgg" && inventoryEggs.length<INVENTORY_LIMIT) {
+      const v=fields[2].split(",");
+      inventoryEggs.push({fried:v[0]==="1",big:v[1]==="1",
+        size:clamp(Number(v[2]) || 1,0.9,1.2)});
+    } else if(fields[0]==="frying") {
+      const v=fields[2].split(",");
+      portableFryEgg={fried:false,big:v[0]==="1",
+        size:clamp(Number(v[1]) || 1,0.9,1.2)};
+    }
+    else if(fields[0]==="egg") {
+      const v=fields[2].split(",");
+      if(v.length>=9 && eggs.length<MAX_EGGS) {
+        const bounceBoost=v.length>=12 && v[11]==="1";
+        const limit=bounceBoost?BOUNCE_MAX_SPEED:MAX_SPEED;
+        eggs.push({x:Number(v[0])*(oldSave?0.5:1),y:Number(v[1])*(oldSave?2/3:1),
+          vx:clamp(Number(v[2])*(oldSave?0.5:1),-limit,limit),
+          vy:clamp(Number(v[3])*(oldSave?2/3:1),-limit,limit),angle:Number(v[4]),
+          fried:v[5]==="1",morph:Number(v[6]),scared:v[7]==="1",
+          lastGrabAt:0-Math.max(0,Number(v[8])),
+          fry:0,scareTime:0,hit:0,bounceBoost:bounceBoost,portalCooldown:0,portalFlight:0,
+          big:v.length>=11 && v[10]==="1",
+          size:v.length>=10?clamp(Number(v[9]),0.9,1.2):1,born:0.32});
+      }
+    }
+  }
+  money=savedMoney>=0?savedMoney:legacyCoins+legacyDollars;
+  meatOnSale=Math.min(meatOnSale,piecesOnSale);
+  electricMeatOnSale=Math.min(electricMeatOnSale,piecesOnSale-meatOnSale);
+  if(!portableFryEgg) portableFryTime=0;
+  lastChunkX=9999; refreshWorld(); saveClock=8; spawnClock=0;
+  specialRenderX=NaN;specialRenderY=NaN;
+  lastDiscoveryX=999999;lastDiscoveryY=999999;
+  let eggsInView=0;
+  for(const e of eggs) if(Math.abs(e.x-cam.x)<VIEW_HALF && Math.abs(e.y-cam.y)<240)
+    eggsInView++;
+  for(let i=eggsInView;i<8;i++) if(!spawnInCamera()) break;
+  previousBiome=biomeAt(cam.x,cam.y); biome=previousBiome; biomeFade=1;
+  deskSkyActive="";renderedDeskEggKey="__reset";renderedFryBarKey="__reset";
+  state="desk"; Scene.open("desk"); updateDeskSky(0);
+  setDeskPauseVisible(false);setQuestsVisible(false);setMarketVisible(false);
+  setSellPickerVisible(false);
+  deskCursor.visible=true;
+  setFinalWinVisible(false);finalVisualKey="__reset";renderedHoleKey="__reset";
+  finalModeShown=null;finalShockRings.clear();
+  updateDeskVisuals();sceneSwitchDelay=0.16;
+  updateFinalVisuals();
+  saveGame();
+}
+function updateSaveCards() {
+  const cards=[saveOne,saveTwo,saveThree];
+  const titles=[slotOneTitle,slotTwoTitle,slotThreeTitle];
+  const infos=[slotOneInfo,slotTwoInfo,slotThreeInfo];
+  for(let i=0;i<3;i++) {
+    const raw=Storage.read(saveName(i),"");
+    let count=0; let eggsBroken=0; let eggsFried=0;
+    let savedMoney=-1;let oldBalance=0;
+    for(const line of raw.split("\n")) {
+      const f=line.split("|");
+      if(f[0]==="value" && f[1]==="quests") count=Number(f[2]);
+      if(f[0]==="value" && f[1]==="broken") eggsBroken=Number(f[2]);
+      if(f[0]==="value" && f[1]==="fried") eggsFried=Number(f[2]);
+      if(f[0]==="value" && f[1]==="money") savedMoney=Number(f[2]);
+      if(f[0]==="value" && (f[1]==="coins" || f[1]==="dollars"))
+        oldBalance+=Number(f[2]);
+    }
+    cards[i].text="";
+    cards[i].disabled=i===slot;
+    titles[i].text=(slot===i?"> ":"")+"FILE "+String(i+1);
+    infos[i].text=raw===""?(saveFailed && i===slot?"SAVE FAILED":"NEW DESK"):
+      String(count)+" QUESTS\n"+String(eggsBroken)+" BROKEN\n"+
+      String(eggsFried)+" FRIED\n"+
+      String(savedMoney>=0?savedMoney:oldBalance)+" MONEY";
+  }
+}
+function showTitle() { state="title"; paused=false; questOpen=false; marketOpen=false; pickerOpen=false; cyanEncounter=false; stopMemeSound(); setWindParticles(false); if(music) Audio.stop(music); music=0;musicPath=""; Scene.open("title"); sceneSwitchDelay=0.16; }
+function showSaves(keepSlot) {
+  state="saves";marketOpen=false;pickerOpen=false;setWindParticles(false);
+  if(!keepSlot) slot=0;
+  resetMenuInput();updateSaveCards();
+  Scene.open("saves");sceneSwitchDelay=0.16;
+}
+function award(id, repeatable) {
+  if(!repeatable && completed[id]) return;
+  if(repeatable) repeated[id]=(repeated[id] || 0)+1;
+  else completed[id]=true;
+  questCount++;
+  for(const quest of QUESTS) if(quest[0]===id) {
+    deskToast.text="* QUEST GET! "+quest[1]; break;
+  }
+  toastClock=3.3; saveClock=Math.min(saveClock,0.4);
+  if(questCount>=10 && !completed.hard) award("hard",false);
+  if(questCount>=25 && !completed.medium) award("medium",false);
+  if(questCount>=50 && !completed.easy) award("easy",false);
+}
+function currentDifficulty() {
+  if(questCount>=50) return "easy";
+  if(questCount>=25) return "medium";
+  if(questCount>=10) return "hard";
+  return "extra";
+}
+function spawnEgg(x,y,big) {
+  if(eggs.length>=MAX_EGGS) return false;
+  eggs.push({x:x,y:y,vx:0,vy:0,angle:0,fried:false,morph:0,scared:false,
+    fry:0,scareTime:0,lastGrabAt:eggAgeClock,hit:0,
+    bounceBoost:false,portalCooldown:0,
+    portalFlight:0,big:!!big,size:random(0.9,1.16),born:0});
+  eggListVersion++;
+  const sx=screenX(x);const sy=screenY(y);
+  if(sx>=VIEW_LEFT && sx<=VIEW_RIGHT && sy>=0 && sy<=H) {
+    deskEggBirth.x=sx;deskEggBirth.y=sy;emitParticles(deskEggBirth,10);
+  }
+  return true;
+}
+function markBounce(e) {
+  e.bounceBoost=true;
+  const speed2=e.vx*e.vx+e.vy*e.vy;
+  if(speed2>BOUNCE_MAX_SPEED*BOUNCE_MAX_SPEED) {
+    const factor=BOUNCE_MAX_SPEED/Math.sqrt(speed2);
+    e.vx*=factor;e.vy*=factor;
+  }
+}
+function teleportEgg(e,i,portal) {
+  const entryX=screenX(e.x);const entryY=screenY(e.y);
+  if(i===held) {
+    e.vx=clamp(cursor.vx*1.15,-MAX_SPEED,MAX_SPEED);
+    e.vy=clamp(cursor.vy*1.15,-MAX_SPEED,MAX_SPEED);
+    e.bounceBoost=false;
+    held=-1;pointerDown=false;panning=false;
+  }
+  const speed=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+  const nx=speed>1?e.vx/speed:(portal.targetX-portal.x)/
+    Math.sqrt(dist2(portal.targetX,portal.targetY,portal.x,portal.y));
+  const ny=speed>1?e.vy/speed:(portal.targetY-portal.y)/
+    Math.sqrt(dist2(portal.targetX,portal.targetY,portal.x,portal.y));
+  const exitOffset=portal.r+(e.big?37:26)*e.size+12;
+  e.x=portal.targetX+nx*exitOffset;
+  e.y=portal.targetY+ny*exitOffset;
+  unstickCaveEgg(e,(e.big?37:26)*e.size,true);
+  e.portalCooldown=0.55;
+  e.portalFlight=1.2;
+  activeEggVersion=-1;
+  if(Math.random()<0.3) e.angle=(e.angle+180)%360;
+  if(entryX>=VIEW_LEFT && entryX<=VIEW_RIGHT && entryY>=0 && entryY<=H) {
+    deskEggBirth.x=entryX;deskEggBirth.y=entryY;emitParticles(deskEggBirth,5);
+  }
+  const exitX=screenX(e.x);const exitY=screenY(e.y);
+  if(exitX>=VIEW_LEFT && exitX<=VIEW_RIGHT && exitY>=0 && exitY<=H) {
+    deskEggBirth.x=exitX;deskEggBirth.y=exitY;emitParticles(deskEggBirth,7);
+  }
+  award("portal_trip",false);
+}
+function eggSpawnSafe(x,y,eggRadius) {
+  eggRadius=eggRadius || 35;
+  if(caveWallOverlaps(x,y,eggRadius)) return false;
+  if(blackHole && dist2(x,y,blackHole.x,blackHole.y)<
+      Math.pow(blackHole.size*0.5+eggRadius,2)) return false;
+  if(finalFight && dist2(x,y,finalFight.x,finalFight.y)<150*150) return false;
+  for(const o of nearbyObjectsFor(x,y)) {
+    const dx=Math.max(0,Math.abs(x-o.x)-o.spawnHalf);
+    if(dx>=eggRadius) continue;
+    const dy=Math.max(0,Math.abs(y-o.y)-o.spawnHalf);
+    if(dx*dx+dy*dy<eggRadius*eggRadius) return false;
+  }
+  return true;
+}
+function spawnInCamera() {
+  let nearby=0;
+  for(const e of eggs) if(Math.abs(e.x-cam.x)<VIEW_HALF && Math.abs(e.y-cam.y)<240)
+    nearby++;
+  if(nearby>=MAX_CAMERA_EGGS) return false;
+  for(let tries=0;tries<28;tries++) {
+    const x=cam.x+random(-VIEW_HALF+30,VIEW_HALF-30);
+    const y=cam.y+random(-195,195);
+    const big=!!finalFight && Math.random()<0.2;
+    if(!eggSpawnSafe(x,y,big?48:35)) continue;
+    if(eggs.length>=MAX_EGGS) {
+      const eligible=[];
+      for(let i=0;i<eggs.length;i++) if(i!==held &&
+        eggAgeClock-eggs[i].lastGrabAt>=240 &&
+        (Math.abs(eggs[i].x-cam.x)>=VIEW_HALF || Math.abs(eggs[i].y-cam.y)>=240))
+        eligible.push(i);
+      if(eligible.length===0) return false;
+      const index=eligible[Math.floor(Math.random()*eligible.length)];
+      eggs.splice(index,1);
+      eggListVersion++;
+      if(held>index) held--;
+    }
+    return spawnEgg(x,y,big);
+  }
+  return false;
+}
+function removeEgg(i,reason) {
+  const e=eggs[i];
+  const sx=screenX(e.x);const sy=screenY(e.y);
+  if(reason!=="bag" && sx>=VIEW_LEFT && sx<=VIEW_RIGHT && sy>=0 && sy<=H) {
+    deskEggBreak.x=sx;deskEggBreak.y=sy;
+    // The void can eat several eggs in one frame. Keep its effect small so
+    // particles never become the most expensive part of the hole or waves.
+    emitParticles(deskEggBreak,reason==="void"?4:17);
+  }
+  if(i===held) held=-1;
+  else if(held>i) held--;
+  eggs.splice(i,1);
+  eggListVersion++;
+  if(reason==="break") {
+    broken++;addMoney(5);
+    if(broken%10===0) award("eggs",true);
+  }
+  if(reason==="mouth") { fed++; if(fed===1) award("mouth",false); if(fed%5===0) award("mouth_more",true); }
+  if(reason==="giraffe") {
+    addMoney(5);giraffeCoins.x=80;giraffeCoins.y=420;
+    emitParticles(giraffeCoins,9);
+    deskToast.text="GIRAFFE ATE AN EGG! +$5";toastClock=2.5;
+  }
+  if(reason==="electricGiraffe") {
+    addMoney(5);electricGiraffeSparks.x=560;electricGiraffeSparks.y=385;
+    emitParticles(electricGiraffeSparks,15);
+    award("electrocuted",false);
+    deskToast.text="ZAP! ELECTRIC GIRAFFE ATE AN EGG! +$5";toastClock=2.5;
+  }
+}
+function addMoney(amount) {
+  money+=amount;saveClock=Math.min(saveClock,1.25);
+}
+function spendFunds(amount) {
+  if(money<amount) {
+    marketMessage="NOT ENOUGH MONEY YET";return false;
+  }
+  money-=amount;
+  saveClock=Math.min(saveClock,0.5);
+  return true;
+}
+function finishFryingEgg(e) {
+  e.fried=true;fried++;addMoney(10);
+  award(fried===1?"fried":"fried_more",false);
+}
+function bagHeldEgg() {
+  if(!grabberOwned || held<0 || held>=eggs.length) return false;
+  if(inventoryEggs.length+(portableFryEgg?1:0)>=INVENTORY_LIMIT) {
+    marketMessage="BAG FULL — PLACE AN EGG FIRST";return false;
+  }
+  const e=eggs[held];
+  inventoryEggs.push({fried:e.fried,big:e.big,size:e.size});
+  removeEgg(held,"bag");pointerDown=false;panning=false;
+  marketMessage="EGG SAFELY IN YOUR BAG";
+  saveClock=Math.min(saveClock,0.5);
+  return true;
+}
+function placeInventoryEgg(friedEgg) {
+  let index=-1;
+  for(let i=0;i<inventoryEggs.length;i++) if(inventoryEggs[i].fried===friedEgg) {
+    index=i;break;
+  }
+  if(index<0) {marketMessage="NO "+(friedEgg?"FRIED":"RAW")+" EGGS IN BAG";return false;}
+  const item=inventoryEggs[index];
+  let placed=false;
+  for(let tries=0;tries<32;tries++) {
+    const x=cam.x+random(-210,210);const y=cam.y+random(-150,150);
+    if(!eggSpawnSafe(x,y,item.big?48:35)) continue;
+    const deskFull=eggs.length>=MAX_EGGS;
+    if(deskFull) {
+      const heldEgg=held>=0 && held<eggs.length?held:-1;
+      let victim=Math.floor(Math.random()*(eggs.length-(heldEgg>=0?1:0)));
+      if(heldEgg>=0 && victim>=heldEgg) victim++;
+      removeEgg(victim,"break");
+    }
+    placed=spawnEgg(x,y,item.big);
+    if(placed) {
+      const e=eggs[eggs.length-1];
+      e.fried=item.fried;e.morph=item.fried?1:0;e.size=item.size;
+      inventoryEggs.splice(index,1);
+      marketMessage=deskFull?
+        "DESK FULL: RANDOM EGG BROKE TO MAKE ROOM":
+        "EGG BACK ON THE DESK";
+      renderedDeskEggKey="__reset";
+      saveClock=Math.min(saveClock,0.5);
+      break;
+    }
+  }
+  if(!placed) marketMessage="NO CLEAR SPACE IN VIEW";
+  return placed;
+}
+function tickEconomy(dt) {
+  if(state!=="desk" || finalFight) return;
+  let changed=false;
+  const otherOnSale=piecesOnSale-meatOnSale-electricMeatOnSale;
+  if(otherOnSale>0) {
+    saleClock+=dt;
+    if(saleClock>=SALE_INTERVAL-0.000001) {
+      const payouts=Math.floor((saleClock+0.000001)/SALE_INTERVAL);
+      saleClock=Math.max(0,saleClock-payouts*SALE_INTERVAL);
+      money+=otherOnSale*payouts;
+      saveClock=Math.min(saveClock,1.25);
+      changed=true;
+    }
+  }
+  if(meatOnSale+electricMeatOnSale>0) {
+    meatSaleClock+=dt;
+    if(meatSaleClock>=SALE_INTERVAL-0.000001) {
+      const payouts=Math.floor((meatSaleClock+0.000001)/SALE_INTERVAL);
+      meatSaleClock=Math.max(0,meatSaleClock-payouts*SALE_INTERVAL);
+      money+=(meatOnSale+electricMeatOnSale)*payouts*2;
+      saveClock=Math.min(saveClock,1.25);
+      changed=true;
+    }
+  }
+  if(portableFryEgg) {
+    portableFryTime=Math.max(0,portableFryTime-dt);
+    if(portableFryTime<=0) {
+      finishFryingEgg(portableFryEgg);
+      inventoryEggs.push(portableFryEgg);
+      portableFryEgg=null;
+      marketMessage="PORTABLE PAN: FRIED EGG +$10";
+      saveClock=Math.min(saveClock,0.5);
+      changed=true;
+    }
+  }
+  if(marketOpen && (changed || portableFryEgg)) {
+    if(pickerOpen) updateSellPickerUi();
+    else updateMarketUi();
+  }
+}
+function objectSummonsBoss(o) {
+  return !!(o && (o.kind==="button"));
+}
+function pressButton(fromEgg,thrown,button) {
+  if(finalFight || blackHole) return;
+  summonButton={x:button?button.x:cam.x,y:button?button.y:cam.y};
+  award("undefined",false);
+  if(fromEgg) award(thrown?"egg_button_throw":"egg_button",false);
+  else award("pressed",false);
+  const bossBiome=biomeAt(summonButton.x,summonButton.y);
+  saveGame(); startFight(currentDifficulty(),bossBiome);
+}
+function updateDeskSky(dt) {
+  // Phase IV owns the whole sky. The biome layers are covered by its gradient,
+  // so there is no reason to keep blending and changing them during the chase.
+  if(finalFight) {updateWindParticles();return;}
+  const next=biomeAt(cam.x,cam.y);
+  if(next!==biome) {
+    if(biomeFade<1 && next===previousBiome) {
+      // Reversing a fade swaps the two gradients and its blend amount.
+      // The displayed color stays continuous while the new one fades in.
+      const oldBiome=biome;
+      biome=next;previousBiome=oldBiome;
+      biomeFade=1-biomeFade;
+      deskSkyBase.src=SKY_IMAGES[previousBiome];
+      deskSkyOverlay.src=SKY_IMAGES[biome];
+      deskSkyOverlay.opacity=biomeFade;
+      deskSkyActive="";
+    } else {
+      // A third biome during a fade starts from the dominant gradient.
+      previousBiome=biomeFade<0.5?previousBiome:biome;
+      deskSkyBase.src=SKY_IMAGES[previousBiome];
+      deskSkyOverlay.src=SKY_IMAGES[next];
+      deskSkyOverlay.opacity=0;
+      biome=next;biomeFade=0;deskSkyActive="";
+    }
+  }
+  if(biomeFade<1) {
+    const fadeSpeed=isCaveBiome(previousBiome) || isCaveBiome(biome)?0.9:1.8;
+    biomeFade=clamp(biomeFade+dt*fadeSpeed,0,1);
+    deskSkyOverlay.opacity=biomeFade;
+    if(biomeFade>=1) {
+      deskSkyBase.src=SKY_IMAGES[biome];
+      deskSkyOverlay.opacity=0;
+      previousBiome=biome;deskSkyActive=biome;
+    }
+  } else if(deskSkyActive!==biome) {
+    deskSkyBase.src=SKY_IMAGES[biome];
+    deskSkyOverlay.opacity=0;
+    previousBiome=biome;deskSkyActive=biome;
+  }
+  updateWindParticles();
+  if(isCaveBiome(biome) && !completed.cave_found) award("cave_found",false);
+  if(!visited[biome]) {
+    visited[biome]=true;
+    let count=0;
+    for(const name of BIOMES) if(visited[name]) count++;
+    if(count>=4) award("tourist",false);
+    if(count>=BIOMES.length) award("all_biomes",false);
+  }
+}
+function updateDeskVisuals() {
+  deskCamera.x=320-cam.x; deskCamera.y=240-cam.y;
+  refreshActiveEggIndices();
+  const visibleEggs=[];
+  let visibleKey="";
+  for(let n=activeEggIndices.length-1;n>=0 &&
+      visibleEggs.length<MAX_RENDER_EGGS;n--) {
+    const i=activeEggIndices[n];
+    const e=eggs[i];
+    if(Math.abs(e.x-cam.x)<VIEW_HALF+30 && Math.abs(e.y-cam.y)<270) {
+      visibleEggs.push(e);visibleKey+=String(i)+",";
+    }
+  }
+  let redrawEggs=renderedDeskEggKey!==visibleKey;
+  if(!redrawEggs) for(const e of visibleEggs) {
+    if(e.drawX!==e.x || e.drawY!==e.y || e.drawAngle!==e.angle ||
+       e.drawMorph!==e.morph || e.drawFried!==e.fried || e.drawBig!==e.big ||
+       e.drawBorn!==e.born || e.drawSize!==e.size) {
+      redrawEggs=true;break;
+    }
+  }
+  if(redrawEggs) {
+    const shellSprites=[];const whiteSprites=[];const yolkSprites=[];
+    for(const e of visibleEggs) {
+      const grow=e.size*(0.52+0.48*(1-Math.pow(1-clamp(e.born/0.32,0,1),3)));
+      if(e.fried) {
+        whiteSprites.push(spriteSpec(e.x,e.y,55*e.morph*grow,51*e.morph*grow));
+        yolkSprites.push(spriteSpec(e.x+1,e.y+1,29*e.morph*grow,29*e.morph*grow));
+      }
+      if(!e.fried || e.morph<0.99) {
+        const size=(e.big?BIG_DESK_EGG_WIDTH:DESK_EGG_WIDTH)*grow;
+        shellSprites.push(spriteSpec(e.x,e.y,size,size*1.2,e.angle,
+          e.fried?1-e.morph:1));
+      }
+      e.drawX=e.x;e.drawY=e.y;e.drawAngle=e.angle;
+      e.drawMorph=e.morph;e.drawFried=e.fried;e.drawBig=e.big;
+      e.drawBorn=e.born;e.drawSize=e.size;
+    }
+    setSprites(deskEggs,shellSprites);
+    setSprites(friedWhites,whiteSprites);
+    setSprites(friedYolks,yolkSprites);
+    renderedDeskEggKey=visibleKey;
+  }
+  let fryKey="";
+  const tracks=[];const fills=[];
+  let scaredCount=0;
+  for(const e of visibleEggs) {
+    if(!e.fried && e.fry>0.01) {
+      const width=Math.max(1,Math.round(clamp(e.fry/2.4,0,1)*46));
+      fryKey+=String(e.x)+","+String(e.y)+","+String(width)+";";
+      tracks.push({x:e.x-27,y:e.y-51,width:54,height:12});
+      fills.push({x:e.x-23,y:e.y-48,width:width,height:6});
+    }
+    if(!e.fried && e.scareTime>0 && scaredCount<scareMarkNodes.length) {
+      const mark=scareMarkNodes[scaredCount++];
+      mark.x=e.x-5;mark.y=e.y-75;mark.visible=true;
+    }
+  }
+  for(let i=scaredCount;i<scareMarkNodes.length;i++)
+    if(scareMarkNodes[i].visible) scareMarkNodes[i].visible=false;
+  if(fryKey!==renderedFryBarKey) {
+    setSprites(fryBarTracks,tracks);setSprites(fryBarFills,fills);
+    renderedFryBarKey=fryKey;
+  }
+  deskCursor.x=cursor.x-5; deskCursor.y=cursor.y-5;
+  const questText=String(questCount)+" QUESTS";
+  if(deskQuestCount.text!==questText) deskQuestCount.text=questText;
+  const wallet="$"+String(money);
+  if(deskWallet.text!==wallet) deskWallet.text=wallet;
+  if(!finalFight) {
+    const help=grabberOwned?
+      "DRAG EGG TO BACKPACK  •  Y: OPEN BAG  •  SWIPE: THROW":
+      "DRAG EGGS  •  SWIPE TO THROW  •  DRAG DESK TO EXPLORE";
+    if(deskHelp.text!==help) deskHelp.text=help;
+  }
+  if(giraffeImage.visible!==giraffeAlive) giraffeImage.visible=giraffeAlive;
+  if(electricGiraffeImage.visible!==electricGiraffeAlive)
+    electricGiraffeImage.visible=electricGiraffeAlive;
+  const bagTarget=grabberOwned && !marketOpen && !finalFight;
+  if(bagEggButton.visible!==bagTarget) bagEggButton.visible=bagTarget;
+  if(backpackIcon.visible!==bagTarget) backpackIcon.visible=bagTarget;
+  if(backpackCount.visible!==bagTarget) backpackCount.visible=bagTarget;
+  if(bagTarget) {
+    const count=String(inventoryEggs.length)+"/"+String(INVENTORY_LIMIT);
+    if(backpackCount.text!==count) backpackCount.text=count;
+    const hovering=held>=0 && overBackpack(cursor.x,cursor.y);
+    if(bagEggButton.disabled!==hovering) bagEggButton.disabled=hovering;
+  }
+  if(completed.map && !finalFight) {
+    if(!deskMapHintPanel.visible) deskMapHintPanel.visible=true;
+    if(!deskBiomeHint.visible) deskBiomeHint.visible=true;
+    let nearest=MAP_TARGETS[0];let distance=99999999;
+    for(const target of MAP_TARGETS) {
+      const d=dist2(cam.x,cam.y,target.x,target.y);
+      if(d<distance) {nearest=target;distance=d;}
+    }
+    const dx=nearest.x-cam.x;const dy=nearest.y-cam.y;
+    const arrow=Math.abs(dx)>Math.abs(dy)?dx>0?">":"<":dy>0?"v":"^";
+    const hint="MAP "+arrow+" "+nearest.name+" "+String(Math.round(Math.sqrt(distance)));
+    if(deskBiomeHint.text!==hint) deskBiomeHint.text=hint;
+  } else {
+    if(deskMapHintPanel.visible) deskMapHintPanel.visible=false;
+    if(deskBiomeHint.visible) deskBiomeHint.visible=false;
+  }
+  deskToastPanel.visible=toastClock>0 && !finalFight;
+  if(toastClock<=0 && deskToast.text!=="") deskToast.text="";
+}
+function finalWaveVisible(wave,radius) {
+  const x=screenX(wave.x);const y=screenY(wave.y);
+  const nearX=x<VIEW_LEFT?VIEW_LEFT-x:x>VIEW_RIGHT?x-VIEW_RIGHT:0;
+  const nearY=y<0?-y:y>H?y-H:0;
+  const reach=radius+40;
+  if(reach*reach<nearX*nearX+nearY*nearY) return false;
+  const farthest=Math.max((x-VIEW_LEFT)*(x-VIEW_LEFT)+y*y,
+    (x-VIEW_RIGHT)*(x-VIEW_RIGHT)+y*y,
+    (x-VIEW_LEFT)*(x-VIEW_LEFT)+(y-H)*(y-H),
+    (x-VIEW_RIGHT)*(x-VIEW_RIGHT)+(y-H)*(y-H));
+  const inner=Math.max(0,radius-40);
+  return inner*inner<=farthest;
+}
+function finalWaveArcOpacity(degrees) {
+  let distance=-1;
+  if(degrees<=14) distance=Math.min(degrees+122,14-degrees);
+  else if(degrees>=238) distance=Math.min(degrees-238,374-degrees);
+  else if(degrees>=70 && degrees<=185)
+    distance=Math.min(degrees-70,185-degrees);
+  return distance<0?0:clamp(distance/12,0,1);
+}
+function finalWaveArcTouches(x,y,wave) {
+  const degrees=(Math.atan2(y-wave.y,x-wave.x)*180/Math.PI+360)%360;
+  return finalWaveArcOpacity(degrees)>0.2;
+}
+function waveSamples(count) {
+  if(finalWaveSamples[count]) return finalWaveSamples[count];
+  const points=[];
+  for(let n=0;n<count;n++) {
+    const angle=n*2*Math.PI/count;
+    const degrees=angle*180/Math.PI;
+    const opacity=finalWaveArcOpacity(degrees);
+    if(opacity>0) points.push({x:Math.cos(angle),y:Math.sin(angle),
+      rotation:degrees+90,opacity:opacity});
+  }
+  finalWaveSamples[count]=points;
+  return points;
+}
+function updateFinalVisuals() {
+  const showingFinal=!!finalFight;
+  if(showingFinal!==finalModeShown) {
+    for(const node of [deskHudRibbon,deskQuestCount,deskWallet,
+        shopButton,bagButton,questsButton,deskToast])
+      node.visible=!showingFinal;
+    deskMapHintPanel.visible=!showingFinal && !!completed.map;
+    deskBiomeHint.visible=!showingFinal && !!completed.map;
+    const showBackpack=!showingFinal && grabberOwned;
+    bagEggButton.visible=showBackpack;
+    backpackIcon.visible=showBackpack;
+    backpackCount.visible=showBackpack;
+    deskToastPanel.visible=!showingFinal && toastClock>0;
+    deskHelp.text=showingFinal?
+      "DRAG TO HIT MOVING UNDEF  •  THROW WHEN STILL  •  B PAUSE":
+      "DRAG EGGS  •  SWIPE TO THROW  •  DRAG DESK TO EXPLORE";
+    for(const node of [finalBossGlow,finalBossCore,finalBossRing,
+        finalLeftGlow,finalRightGlow,
+        finalLeftHand,finalRightHand,finalHud,finalHudPanel,
+        finalBossLabel,finalBossHP,finalHealthTrack,finalHealthFill,
+        finalPlayerHP,finalPlayerTrack,finalPlayerFill,finalMessage]) node.visible=showingFinal;
+    finalMeatButton.visible=showingFinal;
+    finalElectricButton.visible=showingFinal;
+    deskHeldMeat.visible=showingFinal && !!heldMeat;
+    finalModeShown=showingFinal;
+  }
+  const hole=blackHole;
+  if(hole) {
+    // One texture replaces the resizable vector circle and every rim sprite.
+    const visibleSize=Math.min(600,Math.ceil(hole.size/18)*18);
+    const key=String(hole.x)+","+String(hole.y)+","+String(visibleSize);
+    if(key!==renderedHoleKey) {
+      deskHole.x=hole.x-visibleSize/2;deskHole.y=hole.y-visibleSize/2;
+      deskHole.width=visibleSize;deskHole.height=visibleSize;
+      deskHole.visible=true;renderedHoleKey=key;
+    }
+  } else if(renderedHoleKey!=="") {
+    deskHole.visible=false;renderedHoleKey="";
+  }
+  const f=finalFight;
+  const finalSkyOpacity=f?(f.glitch>0?
+    (Math.floor(f.age*22)%5===0?0.2:0.75+0.25*(1-f.glitch/1.5)):1):0;
+  if(deskSkyFinal.opacity!==finalSkyOpacity) deskSkyFinal.opacity=finalSkyOpacity;
+  const showBiomeSky=!f || f.glitch>0;
+  if(deskSkyBase.visible!==showBiomeSky) deskSkyBase.visible=showBiomeSky;
+  if(deskSkyOverlay.visible!==showBiomeSky) deskSkyOverlay.visible=showBiomeSky;
+  if(!f) {
+    if(deskHeldMeat.visible) deskHeldMeat.visible=false;
+    finalWarningA.visible=false;finalWarningB.visible=false;
+    if(finalVisualKey!=="") {finalShockRings.clear();finalVisualKey="";}
+    return;
+  }
+  updateMeatButtons(true);
+  const cyanHue=cyanEncounter || secretOvercharge?270:0;
+  for(const node of [finalBossGlow,finalBossCore,finalBossRing,
+      finalLeftGlow,finalRightGlow,finalLeftHand,finalRightHand])
+    if(node.hue!==cyanHue) node.hue=cyanHue;
+  const shake=overchargeShake();
+  const shakeX=shake.x;const shakeY=shake.y;
+  let scale=1;
+  if(f.mode==="teleport") {
+    scale=f.teleportAge<0.12?Math.max(0,1-f.teleportAge/0.12):
+      1-Math.pow(1-clamp((f.teleportAge-0.12)/0.36,0,1),4);
+  }
+  finalBossGlow.x=f.x-87*scale+shakeX;finalBossGlow.y=f.y-87*scale+shakeY;
+  finalBossCore.x=f.x-61*scale+shakeX;finalBossCore.y=f.y-61*scale+shakeY;
+  finalBossRing.x=f.x-25*scale+shakeX;finalBossRing.y=f.y-25*scale+shakeY;
+  for(const node of [finalBossGlow,finalBossCore,finalBossRing]) node.scale=scale;
+  finalLeftGlow.x=f.left.x-87+shakeX;finalLeftGlow.y=f.left.y-87+shakeY;
+  finalRightGlow.x=f.right.x-87+shakeX;finalRightGlow.y=f.right.y-87+shakeY;
+  finalLeftHand.x=f.left.x-37+shakeX;finalLeftHand.y=f.left.y-37+shakeY;
+  finalRightHand.x=f.right.x-37+shakeX;finalRightHand.y=f.right.y-37+shakeY;
+  const leftWave=f.waves.find(w=>w.hand==="left");
+  const rightWave=f.waves.find(w=>w.hand==="right");
+  finalWarningA.visible=!!leftWave && leftWave.delay>0 && leftWave.delay<1;
+  finalWarningB.visible=!!rightWave && rightWave.delay>0 && rightWave.delay<1;
+  if(leftWave) {finalWarningA.x=leftWave.x-10;finalWarningA.y=leftWave.y-52;}
+  if(rightWave) {finalWarningB.x=rightWave.x-10;finalWarningB.y=rightWave.y-52;}
+  const bossHealthText=String(Math.ceil(f.hp))+" / "+String(f.max);
+  if(finalBossHP.text!==bossHealthText) finalBossHP.text=bossHealthText;
+  const bossHealthWidth=480*clamp(f.hp/f.max,0,1);
+  if(finalHealthFill.width!==bossHealthWidth) finalHealthFill.width=bossHealthWidth;
+  const playerHealthText="YOU "+String(Math.ceil(f.player))+" / 100";
+  if(finalPlayerHP.text!==playerHealthText) finalPlayerHP.text=playerHealthText;
+  const playerHealthWidth=96*clamp(f.player/100,0,1);
+  if(finalPlayerFill.width!==playerHealthWidth) finalPlayerFill.width=playerHealthWidth;
+  const message=heldMeat?"MOVE MEAT TO UNDEF • A TO FEED":
+    f.messageClock>0?f.message:
+    f.mode==="moving"?"DRAG EGGS INTO MOVING UNDEF":
+    f.mode==="teleport"?"UNDEF IS IMMUNE WHILE TELEPORTING":"THROW EGGS AT UNDEF";
+  if(finalMessage.text!==message) finalMessage.text=message;
+  let key="";const visibleWaves=[];
+  for(const wave of f.waves) if(wave.delay<=0 && wave.age<5) {
+    const radius=Math.round(wave.radius/8)*8;
+    if(!finalWaveVisible(wave,radius)) continue;
+    visibleWaves.push(wave);
+    key+=String(radius)+","+String(wave.x)+","+String(wave.y)+";";
+  }
+  if(key!==finalVisualKey) {
+    const sprites=[];
+    for(const wave of visibleWaves) {
+      const radius=Math.round(wave.radius/8)*8;
+      const count=radius<85?24:radius<180?48:96;
+      for(const point of waveSamples(count)) {
+        if(sprites.length>=112) break;
+        const x=wave.x+point.x*radius;
+        const y=wave.y+point.y*radius;
+        const sx=screenX(x);const sy=screenY(y);
+        if(sx<VIEW_LEFT-40 || sx>VIEW_RIGHT+40 || sy<-40 || sy>H+40) continue;
+        sprites.push(spriteSpec(x,y,42,clamp(radius*0.19,20,64),
+          point.rotation,point.opacity));
+      }
+    }
+    setSprites(finalShockRings,sprites);finalVisualKey=key;
+  }
+}
+
+function deskPress(x,y,allowPan) {
+  if(marketOpen) {
+    if(pickerOpen) {
+      if(inside(x,y,544,48,42,37)) {closeMarket();return;}
+      for(let i=0;i<3;i++) if(inside(x,y,65+i*174,99,160,43)) {
+        pickerTab=i;pickerPage=0;pickerSelection=0;pickerMessage="";
+        updateSellPickerUi();return;
+      }
+      if(inside(x,y,440,369,38,36)) {changeSellPickerPage(-1);return;}
+      if(inside(x,y,553,369,38,36)) {changeSellPickerPage(1);return;}
+      const items=sellItemsInTab();
+      for(let i=0;i<SELL_PAGE_SIZE;i++) {
+        const bx=65+(i%3)*174;
+        const by=155+Math.floor(i/3)*108;
+        if(i+pickerPage*SELL_PAGE_SIZE<items.length &&
+            inside(x,y,bx,by,160,92)) {
+          pickerSelection=i;chooseSellPickerItem();return;
+        }
+      }
+      return;
+    }
+    if(inside(x,y,544,48,42,37)) {closeMarket();return;}
+    if(inside(x,y,65,100,245,43)) {
+      marketTab="shop";
+      marketSelection=0;marketMessage="";updateMarketUi();return;
+    }
+    if(inside(x,y,330,100,245,43)) {
+      marketTab="bag";marketSelection=0;marketMessage="";updateMarketUi();return;
+    }
+    for(let i=0;i<(marketTab==="shop"?4:6);i++) {
+      const bx=i%2===0?65:330;const by=157+Math.floor(i/2)*74;
+      if(inside(x,y,bx,by,245,61)) {
+        marketSelection=i;chooseMarketOption();return;
+      }
+    }
+    return;
+  }
+  if(questOpen) {
+    if(inside(x,y,454,41,40,35)) changeQuestPage(-1);
+    else if(inside(x,y,573,41,40,35)) changeQuestPage(1);
+    else if(y>=90 && y<346) {
+      const col=Math.floor((x-26)/200);const row=Math.floor((y-90)/89);
+      if(col>=0 && col<3 && row>=0 && row<3 &&
+          x<26+col*200+188 && y<90+row*89+78) {
+        const index=Math.floor(questSelection/9)*9+row*3+col;
+        if(index<QUESTS.length) {questSelection=index;updateQuestGrid();}
+      }
+    } else if(y>410) {
+      questOpen=false;setQuestsVisible(false);deskCursor.visible=true;
+      if(finalFight && music) Audio.resume(music);
+    }
+    return;
+  }
+  if(paused) {
+    if(controlsOpen) { controlsOpen=false; deskPauseHint.text="D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME"; return; }
+    for(let i=0;i<6;i++) {
+      const bx=i%2===0?120:335;const by=128+Math.floor(i/2)*77;
+      if(inside(x,y,bx,by,185,60)) {
+        pauseSelection=i;choosePause(false);return;
+      }
+    }
+    return;
+  }
+  const hudShift=screenRightOffset();
+  if(!finalFight && inside(x,y,330+hudShift,19,67,38)) { openMarket("shop"); return; }
+  if(!finalFight && inside(x,y,402+hudShift,19,67,38)) { openMarket("bag"); return; }
+  if(!finalFight && inside(x,y,474+hudShift,19,67,38)) { openQuests(); return; }
+  if(inside(x,y,546+hudShift,19,72,38)) { pauseDesk(); return; }
+  if(finalFight && (inside(x,y,284,408,113,43) ||
+      inside(x,y,404,408,113,43))) {
+    pointerDown=true;lastPointer={x:x,y:y};cursor.x=x;cursor.y=y;
+    selectMeat(x<400?"meat":"electric");return;
+  }
+  if(!finalFight && grabberOwned && overBackpack(x,y) && held<0) {
+    openMarket("bag");return;
+  }
+  if(blackHole && dist2(worldX(x),worldY(y),blackHole.x,blackHole.y)<
+      Math.pow(blackHole.size*0.43,2)) {enterFinalFight();return;}
+  pointerDown=true; lastPointer={x:x,y:y}; cursor.x=x;cursor.y=y;cursor.vx=0;cursor.vy=0;
+  const wx=worldX(x); const wy=worldY(y);
+  for(let i=eggs.length-1;i>=0;i--) {
+    const grabRadius=(eggs[i].big?40:31)*eggs[i].size;
+    if(dist2(eggs[i].x,eggs[i].y,wx,wy)<grabRadius*grabRadius) {
+      held=i; eggs[i].vx=0;eggs[i].vy=0;
+      eggs[i].lastGrabAt=eggAgeClock;eggs[i].hit=0;return;
+    }
+  }
+  for(const o of objects) if(o.kind==="button" && objectSummonsBoss(o) &&
+      dist2(wx,wy,o.x,o.y)<o.r*o.r) {
+    pointerDown=false;pressButton(false,false,o);return;
+  }
+  for(const o of objects) if(o.kind==="store" &&
+      dist2(wx,wy,o.x,o.y)<o.r*o.r) {
+    pointerDown=false;openSellPicker();return;
+  }
+  if(giraffeAlive && inside(x,y,4+screenLeftEdge(),171,154,269)) {
+    pointerDown=false;return;
+  }
+  if(electricGiraffeAlive && inside(x,y,482+hudShift,171,154,224)) {
+    pointerDown=false;return;
+  }
+  panning=allowPan;
+}
+function deskMove(x,y,dt) {
+  const dx=x-lastPointer.x; const dy=y-lastPointer.y;
+  cursor.vx=clamp(dx/Math.max(dt,0.016),-450,450);
+  cursor.vy=clamp(dy/Math.max(dt,0.016),-450,450);
+  cursor.x=clamp(x,VIEW_LEFT,VIEW_RIGHT);cursor.y=clamp(y,0,H);
+  if(held>=0 && held<eggs.length) {
+    const e=eggs[held];const radius=(e.big?37:26)*e.size;
+    const x=worldX(cursor.x);const y=worldY(cursor.y);
+    if(!caveWallOverlaps(x,y,radius)) {e.x=x;e.y=y;}
+    else {
+      if(!caveWallOverlaps(x,e.y,radius)) e.x=x;
+      if(!caveWallOverlaps(e.x,y,radius)) e.y=y;
+    }
+    if(giraffeAlive && cursor.x>=4+screenLeftEdge() &&
+        cursor.x<170+screenLeftEdge() &&
+        cursor.y>171 && cursor.y<440) {
+      removeEgg(held,"giraffe");pointerDown=false;
+    }
+    else if(electricGiraffeAlive && cursor.x>474+screenRightOffset() &&
+        cursor.x<=640+screenRightOffset() &&
+        cursor.y>171 && cursor.y<395) {
+      removeEgg(held,"electricGiraffe");pointerDown=false;
+    }
+  } else if(panning) {
+    cam.x-=dx;cam.y-=dy;refreshWorld();
+  }
+  lastPointer={x:x,y:y};
+}
+function deskRelease() {
+  pointerDown=false;panning=false;
+  if(heldMeat) {
+    feedMeatAt(cursor.x,cursor.y,true);
+    saveClock=Math.min(saveClock,0.5);return;
+  }
+  if(held>=0 && grabberOwned && !finalFight &&
+      overBackpack(cursor.x,cursor.y)) {
+    if(!bagHeldEgg()) {
+      if(held>=0 && held<eggs.length) {eggs[held].vx=0;eggs[held].vy=0;}
+      held=-1;
+      deskToast.text=marketMessage;toastClock=3;
+    }
+    saveClock=Math.min(saveClock,0.5);return;
+  }
+  if(held>=0 && held<eggs.length) {
+    const e=eggs[held]; const speed=Math.sqrt(cursor.vx*cursor.vx+cursor.vy*cursor.vy);
+    e.bounceBoost=false;
+    if(speed>=THROW_SPEED) {
+      e.vx=cursor.vx*1.15;e.vy=cursor.vy*1.15;
+      const s=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+      if(s>MAX_SPEED) {e.vx=e.vx/s*MAX_SPEED;e.vy=e.vy/s*MAX_SPEED;}
+      throws++;if(throws===1) award("yeet",false);
+      if(throws%10===0) award("yeet_more",true);
+      if(e.fried) award("fried_flight",false);
+    } else {e.vx=0;e.vy=0;}
+  }
+  held=-1;saveClock=Math.min(saveClock,1.25);
+}
+
+function updateFinalDeskEggs(dt) {
+  // Keep the desk objects active during the chase, but simulate only eggs near
+  // the camera. The rest retain their saved positions until they come into view.
+  const friction=Math.exp(-2.05*dt);
+  const frightening=[];
+  for(const index of activeEggIndices) {
+    const egg=eggs[index];
+    if(egg.fried && egg.morph>0.35 &&
+      Math.abs(egg.x-cam.x)<W+155 && Math.abs(egg.y-cam.y)<H+155)
+      frightening.push(egg);
+  }
+  for(const i of activeEggIndices) {
+    const e=eggs[i];
+    e.scareTime=Math.max(0,(e.scareTime || 0)-dt);
+    e.portalCooldown=Math.max(0,(e.portalCooldown || 0)-dt);
+    e.portalFlight=Math.max(0,(e.portalFlight || 0)-dt);
+    if(i!==held && e.portalFlight<=0 &&
+        (Math.abs(e.x-cam.x)>=W || Math.abs(e.y-cam.y)>=H)) {
+      e.vx=0;e.vy=0;e.hit=0;e.born=0.32;
+      e.bounceBoost=false;
+      if(e.fried) e.morph=1;
+      continue;
+    }
+    e.born=Math.min(0.32,e.born+dt);
+    e.hit=Math.max(0,e.hit-dt);
+    if(e.fried) e.morph=clamp(e.morph+dt/1.35,0,1);
+    if(i!==held && (e.vx!==0 || e.vy!==0)) {
+      const oldX=e.x;const oldY=e.y;
+      const speed2=e.vx*e.vx+e.vy*e.vy;
+      const cap=e.bounceBoost?BOUNCE_MAX_SPEED:MAX_SPEED;
+      if(speed2>cap*cap) {
+        const factor=cap/Math.sqrt(speed2);
+        e.vx*=factor;e.vy*=factor;
+      }
+      e.x+=e.vx*dt;e.y+=e.vy*dt;
+      resolveCaveEggMotion(e,oldX,oldY,(e.big?37:26)*e.size);
+      e.angle+=e.vx*dt*0.08;
+      e.vx*=friction;e.vy*=friction;
+      if(e.vx*e.vx+e.vy*e.vy<49) {e.vx=0;e.vy=0;}
+      if(e.bounceBoost && e.vx*e.vx+e.vy*e.vy<=MAX_SPEED*MAX_SPEED)
+        e.bounceBoost=false;
+    }
+    if(Math.abs(e.x-cam.x)>=W || Math.abs(e.y-cam.y)>=H) continue;
+    if(!e.fried && i!==held) for(const other of frightening) if(other!==e) {
+      const d2=dist2(e.x,e.y,other.x,other.y);
+      if(d2>0.01 && d2<155*155) {
+        const d=Math.sqrt(d2);const push=(1-d/155)*525*dt/d;
+        e.vx+=(e.x-other.x)*push;e.vy+=(e.y-other.y)*push;
+        const speed=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+        if(speed>280) {e.vx=e.vx/speed*280;e.vy=e.vy/speed*280;}
+        e.scareTime=0.55;
+        if(!e.scared) {e.scared=true;scares++;award("scary",false);
+          if(scares>=5) award("panic",false);}
+        break;
+      }
+    }
+    const speed=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+    const eggRadius=(e.big?37:26)*e.size;
+    let action="";let portalObject=null;
+    for(const o of nearbyObjectsFor(e.x,e.y)) {
+        const dx=e.x-o.x;const dy=e.y-o.y;
+        if(dx<-190 || dx>190 || dy<-190 || dy>190) continue;
+        const d2=dx*dx+dy*dy;
+        if(o.kind==="magnet" && i!==held && d2<140*140 && d2>1) {
+          const d=Math.sqrt(d2);const pull=(1-d/140)*460*dt/d;
+          e.vx-=dx*pull;e.vy-=dy*pull;award("magnetic",false);
+        }
+        if(o.kind==="fan" && i!==held && d2<170*170) {
+          e.vx+=o.pushX*470*dt;e.vy+=o.pushY*470*dt;
+          award("windy",false);
+        }
+        if(d2>(o.r+eggRadius)*(o.r+eggRadius)) continue;
+        if(o.kind==="portal" && e.portalCooldown<=0) portalObject=o;
+        if(o.kind==="pan") action="pan";
+        if(o.kind==="mouth" && speed>=THROW_SPEED*0.45) action="mouth";
+        if(o.kind==="sticky") action="sticky";
+        if(o.kind==="brick" && speed>=250) action="brick";
+        if((o.kind==="bumper" || (o.kind==="book" && speed>=THROW_SPEED)) && e.hit<=0) {
+          const d=Math.max(0.01,Math.sqrt(d2));const nx=dx/d;const ny=dy/d;
+          e.x=o.x+nx*(o.r+eggRadius);e.y=o.y+ny*(o.r+eggRadius);
+          const dot=e.vx*nx+e.vy*ny;
+          const rebound=Math.max(185,Math.abs(dot)*1.75,speed*1.05);
+          e.vx=(e.vx-dot*nx)*0.55+nx*rebound;
+          e.vy=(e.vy-dot*ny)*0.55+ny*rebound;
+          markBounce(e);
+          e.hit=0.18;if(i===held) held=-1;award("bounce",false);
+        }
+        if(o.kind==="pencil" && speed>=THROW_SPEED && e.hit<=0) {
+          e.vx=(e.x<o.x?-1:1)*Math.max(Math.abs(e.vx),310);
+          e.vy=-Math.max(Math.abs(e.vy),260);
+          markBounce(e);
+          e.hit=0.25;if(i===held) held=-1;award("homework",false);
+        }
+    }
+    if(portalObject) {teleportEgg(e,i,portalObject);continue;}
+    if(e.vx*e.vx+e.vy*e.vy>525*525 && e.hit>0) award("too_fast",false);
+    if(action==="mouth") {removeEgg(i,"mouth");continue;}
+    if(action==="brick") {award("bricked",false);removeEgg(i,"break");continue;}
+    if(action==="sticky") {e.vx*=0.3;e.vy*=0.3;award("sticky",false);}
+    if(action==="pan") {
+      if(speed>=270) {removeEgg(i,"break");continue;}
+      e.vx=0;e.vy=0;e.fry+=dt;
+      if(e.fry>=2.4 && !e.fried) {
+        finishFryingEgg(e);
+      }
+    } else e.fry=Math.max(0,e.fry-dt*0.35);
+  }
+  spawnClock-=dt;
+  if(spawnClock<=0) spawnClock=spawnInCamera()?random(0.35,0.85):0.25;
+  updateFinalFight(dt);
+  // Winning or losing changes scenes and updates visuals itself.
+  if(state!=="desk" || !finalFight) return;
+  updateDeskVisuals();
+  updateFinalVisuals();
+}
+
+function updateDesk(dt) {
+  if(paused || questOpen || marketOpen) return;
+  dt=Math.min(dt,0.1);
+  let moveX=GamePad.rightX; let moveY=-GamePad.rightY;
+  if(Keyboard.left || Keyboard.a) moveX--;
+  if(Keyboard.right || Keyboard.d) moveX++;
+  if(Keyboard.up || Keyboard.w) moveY--;
+  if(Keyboard.down || Keyboard.s) moveY++;
+  if(Math.abs(moveX)>0.15 || Math.abs(moveY)>0.15) {
+    panning=false;
+    cam.x+=moveX*270*dt;cam.y+=moveY*270*dt;
+  }
+  refreshWorld();updateDeskSky(dt);
+  eggAgeClock+=dt;
+  activeEggTimer=Math.max(0,activeEggTimer-dt);
+  refreshActiveEggIndices();
+  if(finalFight) {updateFinalDeskEggs(dt);return;}
+  if(cam.x*cam.x+cam.y*cam.y>1750*1750) award("explorer",false);
+  if(Math.abs(cam.x-lastDiscoveryX)>48 || Math.abs(cam.y-lastDiscoveryY)>48) {
+    lastDiscoveryX=cam.x;lastDiscoveryY=cam.y;
+    for(const o of objects) {
+      if(Math.abs(o.x-cam.x)<VIEW_HALF+30 && Math.abs(o.y-cam.y)<270) {
+        if(o.kind==="map") award("map",false);
+        if(o.kind==="pan") award("pan",false);
+        if(o.kind==="mouth") award("mouth_found",false);
+        if(o.kind==="button") award("undefined",false);
+      }
+    }
+  }
+  const deskFriction=Math.exp(-2.05*dt);
+  const frightening=[];
+  for(const index of activeEggIndices) {
+    const egg=eggs[index];
+    if(egg.fried && egg.morph>0.35 &&
+    Math.abs(egg.x-cam.x)<W+155 && Math.abs(egg.y-cam.y)<H+155)
+      frightening.push(egg);
+  }
+  for(const i of activeEggIndices) {
+    const e=eggs[i];
+    e.scareTime=Math.max(0,(e.scareTime || 0)-dt);
+    e.portalCooldown=Math.max(0,(e.portalCooldown || 0)-dt);
+    e.portalFlight=Math.max(0,(e.portalFlight || 0)-dt);
+    if(i!==held && e.portalFlight<=0 &&
+        (Math.abs(e.x-cam.x)>=W || Math.abs(e.y-cam.y)>=H)) {
+      // Distant eggs retain their saved positions without running desk physics.
+      e.vx=0;e.vy=0;e.hit=0;e.born=0.32;
+      e.bounceBoost=false;
+      if(e.fried) e.morph=1;
+      continue;
+    }
+    e.born=Math.min(0.32,e.born+dt);
+    e.hit=Math.max(0,e.hit-dt);
+    if(e.fried) e.morph=clamp(e.morph+dt/1.35,0,1);
+    if(i!==held && (e.vx!==0 || e.vy!==0)) {
+      const oldX=e.x;const oldY=e.y;
+      let speed=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+      const cap=e.bounceBoost?BOUNCE_MAX_SPEED:MAX_SPEED;
+      if(speed>cap) {e.vx=e.vx/speed*cap;e.vy=e.vy/speed*cap;}
+      e.x+=e.vx*dt;e.y+=e.vy*dt;
+      resolveCaveEggMotion(e,oldX,oldY,(e.big?37:26)*e.size);
+      e.angle+=e.vx*dt*0.08;
+      e.vx*=deskFriction;e.vy*=deskFriction;
+      if(e.vx*e.vx+e.vy*e.vy<49) {e.vx=0;e.vy=0;}
+      if(e.bounceBoost && e.vx*e.vx+e.vy*e.vy<=MAX_SPEED*MAX_SPEED)
+        e.bounceBoost=false;
+    }
+    if(Math.abs(e.x-cam.x)>=W || Math.abs(e.y-cam.y)>=H) continue;
+    if(!e.fried && i!==held && Math.abs(e.x-cam.x)<W && Math.abs(e.y-cam.y)<H) {
+      for(const other of frightening) if(other!==e) {
+        const d=Math.sqrt(dist2(e.x,e.y,other.x,other.y));
+        if(d>0.1 && d<155) {
+          e.vx+=(e.x-other.x)/d*(1-d/155)*525*dt;
+          e.vy+=(e.y-other.y)/d*(1-d/155)*525*dt;
+          const s=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+          if(s>280) {e.vx=e.vx/s*280;e.vy=e.vy/s*280;}
+          e.scareTime=0.55;
+          if(!e.scared) {e.scared=true;scares++;award("scary",false);if(scares>=5) award("panic",false);}
+          break;
+        }
+      }
+    }
+    const speed=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+    const eggRadius=(e.big?37:26)*e.size;
+    let action="";let portalObject=null;
+    for(const o of nearbyObjectsFor(e.x,e.y)) {
+      const dx=e.x-o.x;
+      if(dx<-190 || dx>190) continue;
+      const dy=e.y-o.y;
+      if(dy<-190 || dy>190) continue;
+      const d2=dx*dx+dy*dy;
+      if(o.kind==="magnet" && i!==held && d2<140*140 && d2>1) {
+        const d=Math.sqrt(d2); const pull=(1-d/140)*460*dt;
+        e.vx+=(o.x-e.x)/d*pull;e.vy+=(o.y-e.y)/d*pull;
+        award("magnetic",false);
+      }
+      if(o.kind==="fan" && i!==held && d2<170*170) {
+        e.vx+=o.pushX*470*dt;e.vy+=o.pushY*470*dt;award("windy",false);
+      }
+      if(d2>(o.r+eggRadius)*(o.r+eggRadius)) continue;
+      if(objectSummonsBoss(o) && !finalFight && !blackHole) {
+        removeEgg(i,"break");pressButton(true,speed>=THROW_SPEED,o);return;
+      }
+      if(o.kind==="portal" && e.portalCooldown<=0) portalObject=o;
+      if(o.kind==="pan") action="pan";
+      if(o.kind==="mouth" && speed>=THROW_SPEED*0.45) action="mouth";
+      if(o.kind==="sticky") action="sticky";
+      if(o.kind==="brick" && speed>=250) action="brick";
+      if((o.kind==="bumper" || (o.kind==="book" && speed>=THROW_SPEED)) && e.hit<=0) {
+        const d=Math.max(0.01,Math.sqrt(d2)); const nx=(e.x-o.x)/d; const ny=(e.y-o.y)/d;
+        e.x=o.x+nx*(o.r+eggRadius);e.y=o.y+ny*(o.r+eggRadius);
+        const dot=e.vx*nx+e.vy*ny;
+        const rebound=Math.max(185,Math.abs(dot)*1.75,speed*1.05);
+        e.vx=(e.vx-dot*nx)*0.55+nx*rebound;
+        e.vy=(e.vy-dot*ny)*0.55+ny*rebound;
+        markBounce(e);
+        e.hit=0.18;if(i===held) held=-1;award("bounce",false);
+      }
+      if(o.kind==="pencil" && speed>=THROW_SPEED && e.hit<=0) {
+        e.vx=(e.x<o.x?-1:1)*Math.max(Math.abs(e.vx),310);
+        e.vy=-Math.max(Math.abs(e.vy),260);
+        markBounce(e);
+        e.hit=0.25;if(i===held) held=-1;award("homework",false);
+      }
+    }
+    if(portalObject) {teleportEgg(e,i,portalObject);continue;}
+    const after=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+    if(after>525 && e.hit>0) award("too_fast",false);
+    if(action==="mouth") {removeEgg(i,"mouth");continue;}
+    if(action==="brick") {award("bricked",false);removeEgg(i,"break");continue;}
+    if(action==="sticky") {e.vx*=0.3;e.vy*=0.3;award("sticky",false);}
+    if(action==="pan") {
+      if(speed>=270) {removeEgg(i,"break");continue;}
+      e.vx=0;e.vy=0;e.fry+=dt;
+      if(e.fry>=2.4 && !e.fried) {
+        finishFryingEgg(e);
+      }
+    } else e.fry=Math.max(0,e.fry-dt*0.35);
+  }
+  spawnClock-=dt;
+  if(spawnClock<=0) spawnClock=spawnInCamera()?random(0.35,0.85):0.25;
+  saveClock-=dt;
+  if(saveClock<=0) {saveClock=8;if(!finalFight) saveGame();}
+  toastClock=Math.max(0,toastClock-dt);
+  if(finalFight) updateFinalFight(dt);
+  else if(blackHole) updateBlackHole(dt);
+  updateDeskVisuals();
+  updateFinalVisuals();
+}
+
+function pauseDesk() {
+  paused=true;pauseSelection=0;controlsOpen=false;
+  stopMemeSound();
+  deskPauseHint.text="D-PAD / STICK CHOOSE  •  A SELECT  •  B RESUME";
+  marketOpen=false;pickerOpen=false;setMarketVisible(false);setSellPickerVisible(false);
+  resetMenuInput();
+  if(finalFight && music) Audio.pause(music);
+  deskCursor.visible=false;
+  setDeskPauseVisible(true);setQuestsVisible(false);questOpen=false;
+  updatePauseButtons(false);
+}
+function openQuests() {
+  questOpen=true;paused=false;setDeskPauseVisible(false);setQuestsVisible(true);
+  stopMemeSound();
+  marketOpen=false;pickerOpen=false;setMarketVisible(false);setSellPickerVisible(false);
+  resetMenuInput();
+  if(finalFight && music) Audio.pause(music);
+  deskCursor.visible=false;
+  updateQuestGrid();
+}
+function showControls(boss) {
+  controlsOpen=true;
+  const help="DRAG: MOVE EGG  •  SWIPE: THROW\nDROP EGG ON BACKPACK TO BAG  •  Y: OPEN BAG\nB / +: PAUSE  •  X / Q: QUESTS";
+  if(boss) fightPauseHint.text=help;
+  else deskPauseHint.text=help;
+}
+function updatePauseButtons(boss) {
+  const buttons=boss?[fightResume,fightRestart,fightDesk,fightControls]:
+    [deskResume,deskQuestMenu,deskShopMenu,deskBagMenu,deskSaveHome,deskControls];
+  const labels=boss?["RESUME","RESTART","BACK TO DESK","CONTROLS"]:
+    ["RESUME","QUESTS",finalFight?"SHOP LOCKED":"SHOP",
+      finalFight?"BAG LOCKED":"BAG",
+      finalFight?"RETURN TO SAVE":"SAVE & HOME","CONTROLS"];
+  const pick=boss?bossPauseSelection:pauseSelection;
+  for(let i=0;i<buttons.length;i++) {
+    buttons[i].text=boss?(i===pick?"> ":"")+labels[i]:labels[i];
+    buttons[i].disabled=i===pick;
+  }
+}
+function updateMarketUi() {
+  const balance="$"+String(money);
+  if(marketBalance.text!==balance) marketBalance.text=balance;
+  const title=marketTab==="shop"?"EGG EMPORIUM":"YOUR BACKPACK";
+  if(marketTitle.text!==title) marketTitle.text=title;
+  if(marketShopTab.disabled!==(marketTab==="shop"))
+    marketShopTab.disabled=marketTab==="shop";
+  if(marketBagTab.disabled!==(marketTab==="bag"))
+    marketBagTab.disabled=marketTab==="bag";
+  const showInfo=false;
+  if(marketInfoPanel.visible!==showInfo) marketInfoPanel.visible=showInfo;
+  if(marketInfo.visible!==showInfo) marketInfo.visible=showInfo;
+  let raw=0;
+  for(const e of inventoryEggs) if(!e.fried) raw++;
+  const cooked=inventoryEggs.length-raw;
+  const labels=marketTab==="shop"?[
+    "EGG GRABBER\n"+(grabberOwned?"OWNED":"$25"),
+    "PORTABLE PAN\n"+(portablePanOwned?"OWNED":"$60"),
+    "GIRAFFE\n"+(giraffeAlive?"ON THE DESK":"$120"),
+    "ELECTRIC GIRAFFE\n"+(electricGiraffeAlive?
+      "ON THE DESK":"$"+String(ELECTRIC_GIRAFFE_PRICE))]:[
+    "BAG EGGS\n"+String(inventoryEggs.length)+" / "+String(INVENTORY_LIMIT)+" STORED",
+    portableFryEgg?"FRYING...\n"+String(Math.ceil(portableFryTime))+" SEC":
+      "FRY RAW\n"+String(raw)+" IN BAG",
+    "PLACE RAW\n"+String(raw)+" IN BAG",
+    "PLACE FRIED\n"+String(cooked)+" IN BAG",
+    "BUTCHER GIRAFFE\n"+(giraffeAlive?"6 MEAT CUTS":"NO GIRAFFE"),
+    "BUTCHER ELECTRIC\n"+(electricGiraffeAlive?"6 ELECTRIC MEAT":"NO ELECTRIC GIRAFFE")];
+  const buttons=[marketOption0,marketOption1,marketOption2,
+    marketOption3,marketOption4,marketOption5];
+  const icons=[marketItemIcon0,marketItemIcon1,marketItemIcon2,
+    marketItemIcon3,marketItemIcon4,marketItemIcon5];
+  const iconSources=marketTab==="shop"?[
+    "assets/grabber.svg","assets/pan-cafe.svg","assets/giraffe.png",
+    "assets/giraffe.png"]:[
+    "assets/grabber.svg","assets/pan-cafe.svg","assets/egg.png",
+    "assets/fried-egg.svg","assets/giraffe.png","assets/giraffe.png"];
+  for(let i=0;i<6;i++) {
+    const visible=marketOpen && i<labels.length;
+    if(buttons[i].visible!==visible) buttons[i].visible=visible;
+    if(icons[i].visible!==visible) icons[i].visible=visible;
+    if(!visible) continue;
+    const label=(i===marketSelection?"> ":"")+labels[i];
+    if(buttons[i].text!==label) buttons[i].text=label;
+    if(buttons[i].disabled!==(i===marketSelection))
+      buttons[i].disabled=i===marketSelection;
+    if(icons[i].src!==iconSources[i]) icons[i].src=iconSources[i];
+    const hue=(marketTab==="shop" && i===3) ||
+      (marketTab==="bag" && i===5)?190:0;
+    if(icons[i].hue!==hue) icons[i].hue=hue;
+    const iconWidth=iconSources[i]==="assets/giraffe.png"?27:
+      iconSources[i]==="assets/meat.png"?50:44;
+    const iconHeight=iconSources[i]==="assets/giraffe.png"?46:
+      iconSources[i]==="assets/meat.png"?38:44;
+    const iconX=(i%2===0?65:330)+245-iconWidth-8;
+    const iconY=157+Math.floor(i/2)*74+(61-iconHeight)/2;
+    if(icons[i].width!==iconWidth) icons[i].width=iconWidth;
+    if(icons[i].height!==iconHeight) icons[i].height=iconHeight;
+    if(icons[i].x!==iconX) icons[i].x=iconX;
+    if(icons[i].y!==iconY) icons[i].y=iconY;
+  }
+  const shopDetails=["DRAG EGGS TO THE BACKPACK TO STORE THEM",
+    "FRY EGGS FROM YOUR BAG ANYWHERE","DRAG EGGS TO GIRAFFE FOR $5",
+    "DRAG EGGS TO BLUE GIRAFFE TO ELECTROCUTE THEM"];
+  const bagDetails=["DRAG EGGS TO THE BACKPACK ON THE DESK",
+    "FRY ONE RAW EGG FROM YOUR BAG","PUT ONE RAW EGG IN THIS AREA",
+    "PUT ONE FRIED EGG IN THIS AREA","TURN GIRAFFE INTO 6 MEAT CUTS",
+    "TURN BLUE GIRAFFE INTO 6 ELECTRIC MEAT CUTS"];
+  const status=marketMessage || (marketTab==="shop"?
+    shopDetails[marketSelection]:bagDetails[marketSelection]);
+  if(marketStatus.text!==status) marketStatus.text=status;
+  const frying=marketOpen && !!portableFryEgg;
+  if(marketFryTrack.visible!==frying) marketFryTrack.visible=frying;
+  if(marketFryFill.visible!==frying) marketFryFill.visible=frying;
+  if(frying) marketFryFill.width=Math.max(1,190*(1-portableFryTime/2.4));
+}
+function openMarket(tab) {
+  if(finalFight) return;
+  pickerOpen=false;setSellPickerVisible(false);
+  marketOpen=true;marketTab=tab;marketSelection=0;marketMessage="";
+  paused=false;questOpen=false;controlsOpen=false;
+  setDeskPauseVisible(false);setQuestsVisible(false);setMarketVisible(true);
+  deskCursor.visible=false;resetMenuInput();updateMarketUi();
+}
+function closeMarket() {
+  marketOpen=false;pickerOpen=false;
+  setMarketVisible(false);setSellPickerVisible(false);deskCursor.visible=true;
+  resetMenuInput();saveClock=Math.min(saveClock,0.5);
+}
+function sellItemCount(id) {
+  if(id==="rawEgg" || id==="friedEgg") {
+    const friedItem=id==="friedEgg";
+    let count=0;
+    for(const egg of inventoryEggs) if(egg.fried===friedItem) count++;
+    return count;
+  }
+  if(id==="meat") return meatPieces;
+  if(id==="electricMeat") return electricMeatPieces;
+  if(id==="grabber") return grabberOwned?1:0;
+  if(id==="pan") return portablePanOwned?1:0;
+  return 0;
+}
+function sellItemsInTab() {
+  const found=[];
+  const tab=SELL_TABS[pickerTab];
+  for(const item of SELL_ITEMS)
+    if(item.tab===tab && sellItemCount(item.id)>0) found.push(item);
+  return found;
+}
+function updateSellPickerUi() {
+  const items=sellItemsInTab();
+  const pages=Math.max(1,Math.ceil(items.length/SELL_PAGE_SIZE));
+  pickerPage=clamp(pickerPage,0,pages-1);
+  const shown=Math.min(SELL_PAGE_SIZE,items.length-pickerPage*SELL_PAGE_SIZE);
+  pickerSelection=clamp(pickerSelection,0,Math.max(0,shown-1));
+  const tabs=[pickerTabEggs,pickerTabFood,pickerTabGear];
+  for(let i=0;i<tabs.length;i++) if(tabs[i].disabled!==(i===pickerTab))
+    tabs[i].disabled=i===pickerTab;
+  const balance="$"+String(money);
+  if(pickerBalance.text!==balance) pickerBalance.text=balance;
+  const tiles=[pickerTile0,pickerTile1,pickerTile2,pickerTile3,pickerTile4,pickerTile5];
+  const icons=[pickerIcon0,pickerIcon1,pickerIcon2,pickerIcon3,pickerIcon4,pickerIcon5];
+  const labels=[pickerLabel0,pickerLabel1,pickerLabel2,pickerLabel3,pickerLabel4,pickerLabel5];
+  for(let i=0;i<SELL_PAGE_SIZE;i++) {
+    const visible=pickerOpen && i<shown;
+    if(tiles[i].visible!==visible) tiles[i].visible=visible;
+    if(icons[i].visible!==visible) icons[i].visible=visible;
+    if(labels[i].visible!==visible) labels[i].visible=visible;
+    if(!visible) continue;
+    const item=items[pickerPage*SELL_PAGE_SIZE+i];
+    const name=item.name+" x"+String(sellItemCount(item.id));
+    if(labels[i].text!==name) labels[i].text=name;
+    if(icons[i].src!==item.icon) icons[i].src=item.icon;
+    const hue=item.id==="electricMeat"?180:0;
+    if(icons[i].hue!==hue) icons[i].hue=hue;
+    const width=44;
+    const height=48;
+    if(icons[i].width!==width) icons[i].width=width;
+    if(icons[i].height!==height) icons[i].height=height;
+    const iconX=65+(i%3)*174+(160-width)/2;
+    if(icons[i].x!==iconX) icons[i].x=iconX;
+    if(tiles[i].disabled!==(i===pickerSelection))
+      tiles[i].disabled=i===pickerSelection;
+  }
+  const empty=pickerOpen && items.length===0;
+  if(pickerEmpty.visible!==empty) pickerEmpty.visible=empty;
+  const pageText=String(pickerPage+1)+" / "+String(pages);
+  if(pickerPageText.text!==pageText) pickerPageText.text=pageText;
+  if(pickerPrev.disabled!==(pickerPage===0)) pickerPrev.disabled=pickerPage===0;
+  if(pickerNext.disabled!==(pickerPage>=pages-1)) pickerNext.disabled=pickerPage>=pages-1;
+  const status=pickerMessage || (empty?"NOTHING TO SELL HERE YET":
+    String(piecesOnSale)+" LISTED  •  MEAT +$2 EACH / 10 SEC");
+  if(pickerStatus.text!==status) pickerStatus.text=status;
+}
+function openSellPicker() {
+  if(finalFight) return;
+  marketOpen=true;pickerOpen=true;pickerTab=0;pickerPage=0;
+  pickerSelection=0;pickerMessage="";
+  paused=false;questOpen=false;controlsOpen=false;
+  setDeskPauseVisible(false);setQuestsVisible(false);setMarketVisible(false);
+  setSellPickerVisible(true);deskCursor.visible=false;
+  resetMenuInput();updateSellPickerUi();
+}
+function changeSellPickerTab(direction) {
+  pickerTab=(pickerTab+direction+SELL_TABS.length)%SELL_TABS.length;
+  pickerPage=0;pickerSelection=0;pickerMessage="";updateSellPickerUi();
+}
+function changeSellPickerPage(direction) {
+  const pages=Math.max(1,Math.ceil(sellItemsInTab().length/SELL_PAGE_SIZE));
+  const next=clamp(pickerPage+direction,0,pages-1);
+  if(next===pickerPage) return;
+  pickerPage=next;pickerSelection=0;pickerMessage="";updateSellPickerUi();
+}
+function moveSellPickerSelection(direction) {
+  const count=Math.min(SELL_PAGE_SIZE,
+    sellItemsInTab().length-pickerPage*SELL_PAGE_SIZE);
+  if(count<=0) return;
+  let next=pickerSelection;
+  if(direction==="left") {
+    if(next%3>0) next--;
+    else if(pickerPage>0) {changeSellPickerPage(-1);return;}
+  } else if(direction==="right") {
+    if(next%3<2 && next+1<count) next++;
+    else if((pickerPage+1)*SELL_PAGE_SIZE<sellItemsInTab().length) {
+      changeSellPickerPage(1);return;
+    }
+  } else if(direction==="up" && next>=3) next-=3;
+  else if(direction==="down" && next+3<count) next+=3;
+  if(next!==pickerSelection) {
+    pickerSelection=next;pickerMessage="";updateSellPickerUi();
+  }
+}
+function chooseSellPickerItem() {
+  const items=sellItemsInTab();
+  const item=items[pickerPage*SELL_PAGE_SIZE+pickerSelection];
+  if(!item) {pickerMessage="NO ITEM SELECTED";updateSellPickerUi();return;}
+  if(item.id==="rawEgg" || item.id==="friedEgg") {
+    const wantsFried=item.id==="friedEgg";
+    for(let i=0;i<inventoryEggs.length;i++) if(inventoryEggs[i].fried===wantsFried) {
+      inventoryEggs.splice(i,1);break;
+    }
+  } else if(item.id==="meat") {
+    meatPieces--;meatOnSale++;award("animal_money",false);
+  }
+  else if(item.id==="electricMeat") {
+    electricMeatPieces--;electricMeatOnSale++;award("animal_money",false);
+  }
+  else if(item.id==="grabber") grabberOwned=false;
+  else if(item.id==="pan") {
+    if(portableFryEgg) {
+      pickerMessage="LET THE PAN FINISH FRYING FIRST";
+      updateSellPickerUi();return;
+    }
+    portablePanOwned=false;
+  }
+  piecesOnSale++;
+  pickerMessage=item.id==="meat" || item.id==="electricMeat"?
+    "MEAT CUT LISTED! +$2 EVERY 10 SEC":
+    item.name+" LISTED! +$1 EVERY 10 SEC";
+  saveClock=Math.min(saveClock,0.5);
+  updateSellPickerUi();
+}
+function chooseMarketOption() {
+  if(marketTab==="shop") {
+    if(marketSelection===0) {
+      if(grabberOwned) marketMessage="YOU ALREADY OWN THE EGG GRABBER";
+      else if(spendFunds(EGG_GRABBER_PRICE)) {
+        grabberOwned=true;marketMessage="DRAG AN EGG ONTO THE BACKPACK ICON";
+      }
+    } else if(marketSelection===1) {
+      if(portablePanOwned) marketMessage="YOU ALREADY OWN THE PORTABLE PAN";
+      else if(spendFunds(PORTABLE_PAN_PRICE)) {
+        portablePanOwned=true;marketMessage="FRY RAW EGGS FROM YOUR BAG";
+      }
+    } else if(marketSelection===2) {
+      if(giraffeAlive) marketMessage="YOUR GIRAFFE IS ALREADY HERE";
+      else if(spendFunds(GIRAFFE_PRICE)) {
+        giraffeAlive=true;marketMessage="DRAG AN EGG TO THE GIRAFFE!";
+      }
+    } else if(marketSelection===3) {
+      if(electricGiraffeAlive) marketMessage="YOUR ELECTRIC GIRAFFE IS ALREADY HERE";
+      else if(spendFunds(ELECTRIC_GIRAFFE_PRICE)) {
+        electricGiraffeAlive=true;
+        marketMessage="DRAG AN EGG TO THE BLUE GIRAFFE!";
+      }
+    }
+  } else if(marketSelection===0) {
+    if(!grabberOwned) marketMessage="BUY THE EGG GRABBER FIRST";
+    else marketMessage="DRAG AN EGG ONTO THE BACKPACK ICON";
+  } else if(marketSelection===1) {
+    if(!portablePanOwned) marketMessage="BUY THE PORTABLE PAN FIRST";
+    else if(portableFryEgg) marketMessage="PAN IS ALREADY FRYING AN EGG";
+    else {
+      let index=-1;
+      for(let i=0;i<inventoryEggs.length;i++) if(!inventoryEggs[i].fried) {index=i;break;}
+      if(index<0) marketMessage="BAG A RAW EGG FIRST";
+      else {
+        portableFryEgg=inventoryEggs[index];inventoryEggs.splice(index,1);
+        portableFryTime=2.4;marketMessage="PORTABLE PAN IS FRYING...";
+        saveClock=Math.min(saveClock,0.5);
+      }
+    }
+  } else if(marketSelection===2) placeInventoryEgg(false);
+  else if(marketSelection===3) placeInventoryEgg(true);
+  else if(marketSelection===4) {
+    if(!giraffeAlive)
+      marketMessage="NO GIRAFFE TO BUTCHER";
+    else {
+      giraffeAlive=false;
+      meatPieces+=6;award("evil",false);
+      marketMessage="6 CUTS IN BAG — FIND A STORE";
+      saveClock=Math.min(saveClock,0.5);
+    }
+  } else if(marketSelection===5) {
+    if(!electricGiraffeAlive) marketMessage="NO ELECTRIC GIRAFFE TO BUTCHER";
+    else {
+      electricGiraffeAlive=false;
+      electricMeatPieces+=6;award("evil",false);
+      marketMessage="6 ELECTRIC CUTS IN BAG";
+      saveClock=Math.min(saveClock,0.5);
+    }
+  }
+  updateMarketUi();
+}
+function questTileLabel(name) {
+  if(name.length<=15) return name;
+  let split=0;let best=999;
+  for(let i=1;i<name.length;i++) if(name[i]===" " && i<=15) {
+    const score=Math.abs(i-name.length/2);
+    if(score<best) {best=score;split=i;}
+  }
+  if(split===0) split=15;
+  const first=name.slice(0,split).trim();
+  let second=name.slice(split).trim();
+  if(second.length>16) second=second.slice(0,13)+"...";
+  return first+"\n"+second;
+}
+function changeQuestPage(direction) {
+  const page=Math.floor(questSelection/9);
+  const next=clamp(page+direction,0,Math.floor((QUESTS.length-1)/9));
+  questSelection=Math.min(next*9+questSelection%9,QUESTS.length-1);
+  updateQuestGrid();
+}
+function updateQuestGrid() {
+  const page=Math.floor(questSelection/9);
+  for(let i=0;i<questTiles.length;i++) {
+    const index=page*9+i;const q=QUESTS[index];const tile=questTiles[i];
+    tile.visible=questOpen && !!q;
+    if(!q) continue;
+    tile.disabled=index===questSelection;
+    tile.text=(completed[q[0]]?"* ":"")+questTileLabel(q[1]);
+  }
+  questPageText.text=String(page+1)+" / "+String(Math.ceil(QUESTS.length/9));
+  questPrev.disabled=page===0;questNext.disabled=page>=Math.floor((QUESTS.length-1)/9);
+  const selected=QUESTS[questSelection];
+  questDetail.text=selected[1]+"\n"+selected[2]+
+    (repeated[selected[0]]?"  ("+String(repeated[selected[0]])+" times)":"");
+}
+
+function playMusic(path) {
+  if(music) Audio.stop(music);
+  musicPath=path;musicRetry=2;
+  music=path?Audio.play(path,{loop:true,volume:0.5}):0;
+}
+function stopMemeSound() {
+  if(memeSound) Audio.stop(memeSound);
+  memeSound=0;
+}
+function tickMemeSound(dt) {
+  if(!cyanEncounter || secretOvercharge || paused) return;
+  memeClock-=dt;
+  if(memeClock>0 || (memeSound && Audio.isPlaying(memeSound))) return;
+  stopMemeSound();
+  const path=MEME_SOUNDS[Math.floor(Math.random()*MEME_SOUNDS.length)];
+  memeSound=Audio.play(path,{volume:0.38});
+  memeClock=random(5,8);
+}
+function selectMeat(kind) {
+  if(kind==="electric" && electricMeatPieces<=0) return;
+  if(kind==="meat" && meatPieces<=0) return;
+  heldMeat=kind;
+  bossHeld=-1;held=-1;panning=false;
+}
+function meatTouchesBoss(x,y,isFinal) {
+  if(isFinal) return !!finalFight &&
+    dist2(worldX(x),worldY(y),finalFight.x,finalFight.y)<82*82;
+  if(!fight || fight.finished) return false;
+  if(fight.phase===1)
+    return dist2(x,y,fight.x,fight.y)<78*78;
+  return dist2(x,y,fight.left.x,fight.left.y)<72*72 ||
+    dist2(x,y,fight.right.x,fight.right.y)<72*72;
+}
+function startSecretOvercharge() {
+  secretUnlocked=true;
+  Storage.write(secretName(slot),"1");
+  if(music) Audio.stop(music);
+  music=0;musicPath="";
+  stopMemeSound();
+  secretOvercharge=true;secretClock=3.1;
+  secretSound=Audio.play("audio/hyperactivity.wav",{volume:0.75});
+  if(finalFight) {
+    finalFight.message="UNDEF IS OVERCHARGING!";
+    finalFight.messageClock=4;
+  } else if(fight) fightMessage("UNDEF IS OVERCHARGING!",4);
+}
+function overchargeShake() {
+  if(!secretOvercharge) return {x:0,y:0};
+  const progress=clamp(2*(1-secretClock/3.1),0,1);
+  const ramp=1+4*progress*progress*progress;
+  const intensity=(1.2+15*progress*progress)*ramp*ramp;
+  const frame=Math.floor(Time.seconds*(17+18*progress));
+  return {x:Math.sin(frame*12.9)*intensity,
+    y:Math.cos(frame*9.7)*intensity};
+}
+function beginCyanEncounter() {
+  cyanEncounter=secretUnlocked;
+  if(secretUnlocked) {
+    secretUnlocked=false;
+    Storage.write(secretName(slot),"0");
+  }
+}
+function feedMeatAt(x,y,isFinal) {
+  if(!heldMeat) return;
+  const kind=heldMeat;
+  heldMeat="";
+  if(!meatTouchesBoss(x,y,isFinal)) return;
+  if(kind==="electric") {
+    if(electricMeatPieces<=0) return;
+    electricMeatPieces--;
+    const zap=isFinal?finalMeatZap:bossMeatZap;
+    zap.x=x;zap.y=y;emitParticles(zap,18);
+    startSecretOvercharge();
+  } else {
+    if(meatPieces<=0) return;
+    meatPieces--;
+    const glitch=isFinal?finalMeatGlitch:bossSparks;
+    glitch.x=x;glitch.y=y;emitParticles(glitch,13);
+    if(isFinal) {
+      finalFight.message="UNDEF GLITCHED THE MEAT. NO DAMAGE.";
+      finalFight.messageClock=2;
+    } else fightMessage("UNDEF GLITCHED THE MEAT. NO DAMAGE.",2);
+  }
+  saveClock=Math.min(saveClock,0.4);
+}
+function updateMeatButtons(isFinal) {
+  const meatButton=isFinal?finalMeatButton:fightMeatButton;
+  const electricButton=isFinal?finalElectricButton:fightElectricButton;
+  const meatText="MEAT "+String(meatPieces);
+  const electricText="ZAP MEAT "+String(electricMeatPieces);
+  if(meatButton.text!==meatText) meatButton.text=meatText;
+  if(electricButton.text!==electricText) electricButton.text=electricText;
+  if(meatButton.disabled!==(meatPieces===0)) meatButton.disabled=meatPieces===0;
+  if(electricButton.disabled!==(electricMeatPieces===0))
+    electricButton.disabled=electricMeatPieces===0;
+  const carried=isFinal?deskHeldMeat:fightHeldMeat;
+  if(carried.visible!==!!heldMeat) carried.visible=!!heldMeat;
+  if(heldMeat) {
+    carried.x=cursor.x-24;carried.y=cursor.y-18;
+    const hue=heldMeat==="electric"?180:0;
+    if(carried.hue!==hue) carried.hue=hue;
+  }
+}
+function startCredits(mode) {
+  creditsMode=mode;creditsOffset=480;
+  const fake=mode==="fake";
+  const lines=fake?[
+    "wowie! YOU FOUND SECRET!",
+    "HEHEHEHEHEHEHEHEEEHHEEHEEHEHEHEE\nHEHEHEHHEHEHEHEEEEEE!!!!1!!1",
+    "you are truly smart. now get a peice\nof cheese :3",
+    "", "but you didn't beat the game.",
+    "this is the secret ending where you\nelectrocute and overcharge him.",
+    "...he's crying now :3", ""]:[
+    "An EgG", "UNDEF DISPELLED", "Created by lf",
+    "Made with Cafe Engine", "Thanks for playing.", "", "", ""];
+  const nodes=[creditLine0,creditLine1,creditLine2,creditLine3,
+    creditLine4,creditLine5,creditLine6,creditLine7];
+  for(let i=0;i<nodes.length;i++) {
+    nodes[i].text=lines[i];nodes[i].visible=lines[i]!=="";
+  }
+  creditCheese.visible=fake;
+  state="credits";Scene.open("credits");sceneSwitchDelay=0.16;
+}
+function endCredits() {
+  if(creditsMode==="fake") {
+    loadGame(slot);
+    deskToast.text="UNDEF IS STILL OUT THERE";toastClock=3;
+  } else {
+    creditsMode="";state="finalWin";
+    Scene.open("desk");setFinalWinVisible(true);
+    deskCursor.visible=false;updateFinalVisuals();
+    sceneSwitchDelay=0.16;
+  }
+}
+function updateCredits(dt,skip) {
+  const fake=creditsMode==="fake";
+  creditsOffset-=dt*(fake?135:45);
+  const offsets=fake?[0,110,250,380,500,620,760,0]:
+    [0,130,260,360,500,0,0,0];
+  const nodes=[creditLine0,creditLine1,creditLine2,creditLine3,
+    creditLine4,creditLine5,creditLine6,creditLine7];
+  for(let i=0;i<nodes.length;i++) if(nodes[i].visible)
+    nodes[i].y=creditsOffset+offsets[i];
+  if(fake) creditCheese.y=creditsOffset+365;
+  if(skip || creditsOffset+(fake?760:500)<-100) endCredits();
+}
+function keepMusicPlaying(dt) {
+  if(!musicPath || paused || (state==="fight" && fight &&
+      (fight.attack==="waves" || fight.attack==="bodyWaves"))) return;
+  musicRetry-=dt;
+  if(musicRetry>0) return;
+  musicRetry=2;
+  if(!music || !Audio.isPlaying(music)) {
+    if(music) Audio.stop(music);
+    music=Audio.play(musicPath,{loop:true,volume:0.5});
+  }
+}
+function fightEggPosition(x,y) {
+  if(y<113 || y>430) return false;
+  if(fight.phase===1) return dist2(x,y,fight.x,fight.y)>75*75;
+  return dist2(x,y,fight.left.x,fight.left.y)>61*61 &&
+    dist2(x,y,fight.right.x,fight.right.y)>61*61;
+}
+function spawnBossEggs(amount) {
+  for(let n=0;n<amount && bossEggsData.length<18;n++) {
+    for(let tries=0;tries<25;tries++) {
+      const x=random(50,590); const y=random(125,435);
+      if(fightEggPosition(x,y)) {
+        const big=Math.random()<0.18;
+        bossEggsData.push({x:x,y:y,vx:0,vy:0,big:big,damage:big?6:2,
+          angle:0,size:random(0.9,1.17),born:0});
+        bossEggBirth.x=x;bossEggBirth.y=y;emitParticles(bossEggBirth,big?16:9);
+        break;
+      }
+    }
+  }
+}
+function buildInterior() {
+  const fields=[interiorFieldA,interiorFieldB,interiorFieldC,interiorFieldD];
+  for(const field of fields) field.clear();
+  // Keep the dense field while staying below the engine's large-batch cache.
+  for(let i=0;i<640;i++) {
+    const side=Math.random()<0.72;
+    const x=side?random(-30,310):random(0,640);
+    const y=random(80,480);
+    const size=random(4,17);
+    centered(fields[i%4],x,y,size,size,
+      {rotation:random(0,360),opacity:random(0.55,0.95)});
+  }
+}
+function startFight(difficulty,originBiome) {
+  if(state!=="fight") beginCyanEncounter();
+  if(state==="desk") saveGame();
+  heldMeat="";secretOvercharge=false;stopMemeSound();memeClock=2;
+  state="fight";paused=false;controlsOpen=false;
+  setWindParticles(false);
+  fightBiome=originBiome || "plains";
+  const fullHp=difficulty==="easy"?50:difficulty==="extra"?300:200;
+  fight={difficulty:difficulty,phase:1,hp:fullHp,max:fullHp,player:100,
+    x:320,y:215,teleport:null,slam:null,clock:2.3,index:0,transition:0,
+    white:0,message:"Drag eggs into UNDEF",messageClock:3,
+    left:{x:215,y:230,fromX:215,fromY:230,targetX:215,targetY:230,t:1,duration:1},
+    right:{x:425,y:230,fromX:425,fromY:230,targetX:425,targetY:230,t:1,duration:1},
+    waves:[],zones:[],zoneClock:0,strip:null,moveFour:null,
+    bodyDrop:null,bodyMotion:null,attack:"",attackClock:0,
+    invuln:0,playerInvuln:0,finished:false,won:false};
+  bossEggsData=[];bossHeld=-1;bossPauseSelection=0;
+  renderedBossEggCount=-1;lastEffectKey="__initial";lastBreakoutFrame=-1;
+  for(const field of [interiorFieldA,interiorFieldB,interiorFieldC,interiorFieldD])
+    field.clear();
+  breakoutField.clear();avoidMarkers.clear();avoidHazards.clear();shockRings.clear();
+  clearStripCircles();
+  fightBlack.opacity=0;fightWhite.opacity=0;
+  bossGlow.visible=true;bossAura.visible=true;bossCore.visible=true;bossRing.visible=true;
+  leftGlow.visible=false;rightGlow.visible=false;leftHand.visible=false;rightHand.visible=false;
+  setFightPauseVisible(false);setResultVisible(false);fightCursor.visible=true;
+  const layers={plains:fightPlains,pinball:fightPinball,frying:fightFrying,
+    magnet:fightMagnet,sticky:fightSticky,wind:fightWind,portal:fightPortal,
+    cave:fightCave,fryingCave:fightFryingCave,portalCave:fightPortalCave};
+  for(const name of BIOMES) layers[name].opacity=name===fightBiome?1:0;
+  spawnBossEggs(6);playMusic("audio/final-boss.ogg");
+  Scene.open("fight");updateBossVisuals();sceneSwitchDelay=0.16;
+}
+function fightMessage(value,time) {fight.message=value;fight.messageClock=time || 2.5;}
+function damagePlayer(amount) {
+  if(fight.playerInvuln>0 || fight.finished) return;
+  fight.player=Math.max(0,fight.player-amount);
+  fight.playerInvuln=0.4;
+  if(fight.player<=0) finishFight(false);
+}
+function finishFight(won) {
+  stopMemeSound();
+  if(won) {
+    if(music) Audio.stop(music);music=0;musicPath="";
+    fight.finished=true;fight.won=true;
+    if(fight.strip) {clearStripCircles();fight.strip=null;}
+    blackHole={x:summonButton?summonButton.x:cam.x,
+      y:summonButton?summonButton.y:cam.y,size:170,age:0};
+    activeEggVersion=-1;
+    backToDesk();
+    deskToast.text="UNDEF'S VOID REMAINS — PRESS THE BLACK HOLE";
+    toastClock=5;saveGame();
+    return;
+  }
+  fight.finished=true;fight.won=won;
+  if(fight.strip) {clearStripCircles();fight.strip=null;}
+  if(music) Audio.stop(music);music=0;musicPath="";
+  fightCursor.visible=false;
+  setResultVisible(true);
+  const name="UNDEF";
+  resultTitle.text=won?name+" DISPELLED!":name+" GOT YOU!";
+  resultDetail.text=won?"All three phases cleared. The desk lives on.":
+    "The desk needs another brave egg.";
+}
+function updateBlackHole(dt) {
+  blackHole.age=(blackHole.age || 0)+dt;
+  const pullRadius=blackHole.size*0.6+100;
+  const pullRadius2=pullRadius*pullRadius;
+  const consumeRadius2=blackHole.size*0.21*blackHole.size*0.21;
+  refreshActiveEggIndices();
+  for(const i of activeEggIndices) {
+    if(i===held) continue;
+    const e=eggs[i];
+    const dx=blackHole.x-e.x;const dy=blackHole.y-e.y;
+    if(Math.abs(dx)>pullRadius || Math.abs(dy)>pullRadius) continue;
+    const d2=dx*dx+dy*dy;
+    if(d2<consumeRadius2) {
+      removeEgg(i,"void");
+      blackHole.size=Math.min(600,blackHole.size+9);
+      continue;
+    }
+    if(d2>1 && d2<pullRadius2) {
+      const d=Math.sqrt(d2);
+      const pull=clamp(1-d/pullRadius,0,1)*480*dt;
+      const cap=e.bounceBoost?BOUNCE_MAX_SPEED:MAX_SPEED;
+      e.vx=clamp(e.vx+dx/d*pull,-cap,cap);
+      e.vy=clamp(e.vy+dy/d*pull,-cap,cap);
+    }
+  }
+}
+function enterFinalFight() {
+  if(!blackHole || finalFight) return;
+  if(!cyanEncounter) beginCyanEncounter();
+  saveGame();
+  heldMeat="";stopMemeSound();memeClock=2;
+  finalFight={x:blackHole.x,y:blackHole.y,hp:currentDifficulty()==="easy"?90:
+      currentDifficulty()==="medium"?140:currentDifficulty()==="hard"?190:260,
+    max:0,player:100,invuln:0,mode:"teleport",modeClock:0,teleportAge:0,
+    teleportX:cam.x+random(-115,115),teleportY:cam.y+random(-80,80),
+    left:{x:blackHole.x-175,y:blackHole.y},
+    right:{x:blackHole.x+175,y:blackHole.y},
+    waveClock:3.2,waves:[],deleteClock:5.5,glitch:1.5,age:0,
+    message:"DRAG EGGS INTO MOVING UNDEF",messageClock:4};
+  finalFight.max=finalFight.hp;
+  blackHole=null;held=-1;pointerDown=false;panning=false;
+  activeEggVersion=-1;
+  setWindParticles(false);
+  deskSkyFinal.opacity=0;
+  playMusic("audio/hard-waves.wav");
+  updateFinalVisuals();
+}
+function finalEggHit(i) {
+  if(!finalFight || finalFight.mode==="teleport") return;
+  const e=eggs[i];if(!e) return;
+  const damage=(e.big?12:4)*(e.fried?3:1);
+  finalFight.hp=Math.max(0,finalFight.hp-damage);
+  removeEgg(i,"void");
+  finalFight.message=e.fried?"FRIED EGG x3!":e.big?"BIG EGG HIT!":"UNDEF HIT!";
+  finalFight.messageClock=1;
+  if(finalFight.hp<=0) finishFinalFight();
+}
+function finishFinalFight() {
+  if(music) Audio.stop(music);music=0;musicPath="";
+  stopMemeSound();heldMeat="";
+  finalFight=null;blackHole=null;cyanEncounter=false;
+  finalWon=true;addMoney(100);
+  saveGame();
+  startCredits("real");
+}
+function damageFinalPlayer(amount) {
+  if(!finalFight || finalFight.invuln>0) return;
+  finalFight.player=Math.max(0,finalFight.player-amount);
+  finalFight.invuln=0.6;
+  if(finalFight.player<=0) {
+    if(music) Audio.stop(music);music=0;musicPath="";
+    loadGame(slot);
+    deskToast.text="UNDEF WON — BACK TO YOUR SAVE";toastClock=4;
+  }
+}
+function updateFinalFight(dt) {
+  const f=finalFight;if(!f || secretOvercharge) return;
+  tickMemeSound(dt);
+  f.age+=dt;f.invuln=Math.max(0,f.invuln-dt);
+  f.messageClock=Math.max(0,f.messageClock-dt);
+  f.glitch=Math.max(0,f.glitch-dt);
+  keepMusicPlaying(dt);
+  const px=worldX(cursor.x);const py=worldY(cursor.y);
+  if(f.mode==="teleport") {
+    f.teleportAge+=dt;
+    if(f.teleportAge>=0.12 && !f.teleported) {
+      f.x=f.teleportX;f.y=f.teleportY;f.teleported=true;
+      activeEggVersion=-1;
+    }
+    if(f.teleportAge>=0.48) {
+      f.mode="moving";f.modeClock=0;f.teleportAge=0;f.teleported=false;
+    }
+  } else {
+    f.modeClock+=dt;
+    if(f.mode==="moving") {
+      const dx=px-f.x;const dy=py-f.y;const distance=Math.sqrt(dx*dx+dy*dy);
+      if(distance>1) {
+        const step=Math.min(distance,105*dt);
+        f.x+=dx/distance*step;f.y+=dy/distance*step;
+      }
+      if(f.modeClock>=4.6) {f.mode="still";f.modeClock=0;}
+    } else if(f.modeClock>=2.1) {
+      f.mode="teleport";f.modeClock=0;f.teleportAge=0;
+      f.teleportX=px+random(-170,170);f.teleportY=py+random(-130,130);
+    }
+  }
+  if(f.waveClock>0) f.waveClock-=dt;
+  if(f.waveClock<=0 && f.waves.length===0) {
+    f.waveClock=15.5;
+    f.waves=[{hand:"left",x:f.x,y:f.y-175,delay:1.4,age:0,radius:0,hit:false},
+      {hand:"right",x:f.x,y:f.y+175,delay:3.1,age:0,radius:0,hit:false}];
+    f.message="SHOCKWAVES — WATCH THE HANDS!";f.messageClock=3;
+  }
+  const leftWave=f.waves.find(w=>w.hand==="left");
+  const rightWave=f.waves.find(w=>w.hand==="right");
+  const leftX=leftWave?leftWave.x:f.x-175;
+  const leftY=leftWave?leftWave.y:f.y;
+  const rightX=rightWave?rightWave.x:f.x+175;
+  const rightY=rightWave?rightWave.y:f.y;
+  const ease=clamp(dt*5,0,1);
+  f.left.x+=(leftX-f.left.x)*ease;f.right.x+=(rightX-f.right.x)*ease;
+  f.left.y+=(leftY-f.left.y)*ease;f.right.y+=(rightY-f.right.y)*ease;
+  if(Math.abs(f.left.x-leftX)<0.2) f.left.x=leftX;
+  if(Math.abs(f.left.y-leftY)<0.2) f.left.y=leftY;
+  if(Math.abs(f.right.x-rightX)<0.2) f.right.x=rightX;
+  if(Math.abs(f.right.y-rightY)<0.2) f.right.y=rightY;
+  for(let w=f.waves.length-1;w>=0;w--) {
+    const wave=f.waves[w];
+    if(wave.delay>0) {
+      wave.delay-=dt;
+      if(wave.delay<=0) Audio.play("audio/shockwave-whoosh.wav",{volume:0.5});
+      continue;
+    }
+    wave.age+=dt;wave.radius=25+wave.age*105;
+    if(wave.age>=5) {f.waves.splice(w,1);continue;}
+    const playerD2=dist2(px,py,wave.x,wave.y);
+    const playerInner=Math.max(0,wave.radius-19);
+    const playerOuter=wave.radius+19;
+    if(playerD2>=playerInner*playerInner && playerD2<=playerOuter*playerOuter &&
+        finalWaveArcTouches(px,py,wave))
+      damageFinalPlayer(8);
+    if(!finalFight) return;
+    refreshActiveEggIndices();
+    for(const i of activeEggIndices) {
+      if(i===held) continue;
+      const e=eggs[i];
+      if(Math.abs(e.x-wave.x)>wave.radius+45 || Math.abs(e.y-wave.y)>wave.radius+45) continue;
+      const margin=(e.big?38:28)*e.size;
+      const inner=Math.max(0,wave.radius-margin);
+      const outer=wave.radius+margin;
+      const d2=dist2(e.x,e.y,wave.x,wave.y);
+      if(d2>=inner*inner && d2<=outer*outer && finalWaveArcTouches(e.x,e.y,wave))
+        removeEgg(i,"void");
+    }
+  }
+  f.deleteClock-=dt;
+  if(f.deleteClock<=0) {
+    f.deleteClock=random(5,7);
+    let removed=0;
+    for(let i=eggs.length-1;i>=0 && removed<3;i--) {
+      if(i!==held && Math.abs(eggs[i].x-cam.x)<320 && Math.abs(eggs[i].y-cam.y)<240 &&
+          Math.random()<0.42) {removeEgg(i,"void");removed++;}
+    }
+    f.message="UNDEF DELETED EGGS";f.messageClock=1.5;
+  }
+  if(f.mode!=="teleport") {
+    refreshActiveEggIndices();
+    for(const i of activeEggIndices) {
+      const e=eggs[i];
+      const dx=e.x-f.x;const dy=e.y-f.y;
+      if(Math.abs(dx)>180 || Math.abs(dy)>180) continue;
+      const distance=Math.sqrt(dx*dx+dy*dy);
+      if(distance<57+(e.big?10:0) && (i===held ||
+          (f.mode==="still" && e.vx*e.vx+e.vy*e.vy>THROW_SPEED*THROW_SPEED*0.25))) {
+        finalEggHit(i);if(!finalFight) return;continue;
+      }
+      if(f.mode==="moving" && i!==held && distance>1 && distance<170) {
+        const push=(1-distance/170)*630*dt;
+        const cap=e.bounceBoost?BOUNCE_MAX_SPEED:MAX_SPEED;
+        e.vx=clamp(e.vx+dx/distance*push,-cap,cap);
+        e.vy=clamp(e.vy+dy/distance*push,-cap,cap);
+      }
+    }
+  }
+}
+function beginPhaseTwo() {
+  if(fight.strip) clearStripCircles();
+  fight.phase=2;
+  fight.hp=fight.difficulty==="easy"?50:fight.difficulty==="extra"?150:100;
+  fight.max=fight.hp;fight.transition=3.1;fight.clock=4;fight.index=0;
+  fight.attack="";fight.waves=[];fight.zones=[];fight.strip=null;
+  fight.moveFour=null;fight.bodyDrop=null;fight.bodyMotion=null;
+  bossEggsData=[];bossHeld=-1;
+  buildInterior();breakoutField.clear();
+  bossGlow.visible=false;bossAura.visible=false;bossCore.visible=false;bossRing.visible=false;
+  leftGlow.visible=false;rightGlow.visible=false;
+  leftHand.visible=false;rightHand.visible=false;
+  fightBlack.opacity=1;
+  fightMessage("UNDEF'S INSIDES BREAK OUT — HANDS!",3.1);
+  playMusic("audio/hard-phase.wav");
+}
+function enterPhaseThree() {
+  if(fight.strip) clearStripCircles();
+  fight.phase=3;
+  fight.hp=Math.ceil(fight.max/2);
+  fight.clock=3;fight.index=0;fight.white=0.35;
+  fight.attack="";fight.waves=[];fight.zones=[];fight.strip=null;
+  fight.moveFour=null;fight.bodyDrop=null;fight.bodyMotion=null;
+  bossEggsData=[];bossHeld=-1;
+  for(const field of [interiorFieldA,interiorFieldB,interiorFieldC,interiorFieldD])
+    field.clear();
+  fightBlack.opacity=0;fightWhite.opacity=1;
+  fightMessage("PHASE III — HARD WAVES",3);
+  playMusic("audio/hard-waves.wav");
+}
+function handEase(name,t) {
+  t=clamp(t,0,1);
+  if(name==="quartInOut") return t<0.5?8*Math.pow(t,4):
+    1-Math.pow(-2*t+2,4)/2;
+  if(name==="sineInOut") return -(Math.cos(Math.PI*t)-1)/2;
+  if(name==="expoIn") return t===0?0:Math.pow(2,10*t-10);
+  if(name==="cubicIn") return t*t*t;
+  if(name==="elasticIn") {
+    if(t===0 || t===1) return t;
+    return -Math.pow(2,10*t-10)*Math.sin((t*10-10.75)*Math.PI*2/3);
+  }
+  return 1-Math.pow(1-t,4);
+}
+function moveHand(hand,x,y,duration,easingX,easingY) {
+  hand.fromX=hand.x;hand.fromY=hand.y;
+  hand.targetX=x;hand.targetY=y;hand.t=0;hand.duration=duration;
+  hand.easingX=easingX || "quartOut";
+  hand.easingY=easingY || hand.easingX;
+}
+function moveBody(x,y,duration,easingX,easingY) {
+  fight.bodyMotion={fromX:fight.x,fromY:fight.y,targetX:x,targetY:y,
+    age:0,duration:duration,easingX:easingX || "quartOut",
+    easingY:easingY || easingX || "quartOut"};
+}
+function waveLimit(x,y) {
+  const right=640-x;const bottom=480-y;
+  return Math.max(Math.sqrt(x*x+y*y),Math.sqrt(right*right+y*y),
+    Math.sqrt(x*x+bottom*bottom),Math.sqrt(right*right+bottom*bottom))+22;
+}
+function startShockwaves() {
+  const leftX=320;const leftY=168;
+  const rightX=320;const rightY=372;
+  fight.waves=[
+    {x:leftX,y:leftY,delay:0.9,warningLead:0.9,age:0,radius:7,rotation:0,c:1,s:0,
+      limit:waveLimit(leftX,leftY),hit:0,sounded:false},
+    {x:rightX,y:rightY,delay:2.9,warningLead:0.9,age:0,radius:7,rotation:0,c:1,s:0,
+      limit:waveLimit(rightX,rightY),hit:0,sounded:true}
+  ];
+  fightMessage("SHOCKWAVES — FOLLOW THE !",3);
+}
+function startMoveFour() {
+  fight.attack="waves";fight.attackClock=0;
+  fight.moveFour={wavesStarted:false,leftNudge:false,rightNudge:false};
+  fight.waves=[];
+  moveHand(fight.left,320,120,2.4,"quartInOut");
+  moveHand(fight.right,320,360,2.4,"quartInOut");
+  Audio.pause(music);
+  Audio.play("audio/hand-whoosh.wav",{volume:0.4});
+  fightMessage("THE HANDS LINE UP",2);
+}
+function startAvoidance() {
+  fight.attack="avoidance";fight.attackClock=0;fight.zones=[];
+  fight.zonesSpawned=false;fight.avoidWindup=false;fight.avoidCross=false;
+  moveHand(fight.left,197,300,1,"quartOut");
+  moveHand(fight.right,320,180,1,"quartOut");
+  fightMessage("AVOIDANCE SLAM — WATCH THE MARKERS!",3);
+}
+function startBodyDrop() {
+  fight.attack="bodyDrop";fight.attackClock=0;
+  fight.bodyDrop={dropping:false,cleared:false};
+  moveBody(320,random(120,240),1,"quartOut");
+  fightMessage("BODY DROP — THE EGGS WILL BE ERASED",2.5);
+}
+function startBodyWaves() {
+  fight.attack="bodyWaves";fight.attackClock=0;
+  fight.moveFour={wavesStarted:false,leftNudge:false,rightNudge:false};
+  fight.waves=[];moveBody(320,120,2.4,"quartInOut");
+  Audio.pause(music);
+  fightMessage("SHOCKWAVES — FOLLOW THE !",2.8);
+}
+function startBodyAvoidance() {
+  fight.attack="bodyAvoidance";fight.attackClock=0;fight.zones=[];
+  fight.zonesSpawned=false;fight.avoidWindup=false;fight.avoidCross=false;
+  moveBody(197,300,1,"quartOut");
+  fightMessage("AVOIDANCE SLAM — WATCH THE MARKERS!",3);
+}
+function sampleStripPoint(points,x,y,direction) {
+  const angle=direction*Math.PI/180;
+  const nextX=x+Math.sin(angle)*10;
+  const nextY=y+Math.cos(angle)*10;
+  points.push({x:((x+nextX)/2+240)*W/480,
+    y:(180-(y+nextY)/2)*H/360,nx:Math.cos(angle),ny:Math.sin(angle)});
+  points.push({x:(nextX+240)*W/480,y:(180-nextY)*H/360,
+    nx:Math.cos(angle),ny:Math.sin(angle)});
+  return {x:nextX,y:nextY};
+}
+function addStripCurve(points,curve,startY,repeats,direction,startX,fromY) {
+  let x=startX===undefined?-280:startX;
+  let y=fromY===undefined?startY:fromY;
+  let heading=direction===undefined?90+curve*10:direction;
+  for(let i=0;i<repeats;i++) {
+    const first=sampleStripPoint(points,x,y,heading);
+    x=first.x;y=first.y;heading-=curve;
+    const second=sampleStripPoint(points,x,y,heading);
+    x=second.x;y=second.y;heading-=curve;
+  }
+  return {x:x,y:y,direction:heading};
+}
+function buildStripHazards(amount,origin) {
+  amount=amount || STRIP_HAZARDS;
+  const points=[];
+  const firstCurve=Math.floor(random(-3,4));
+  addStripCurve(points,firstCurve,firstCurve*40,40);
+  const firstEnd=points.length;
+  const secondCurve=Math.floor(random(-2,3));
+  const middle=addStripCurve(points,secondCurve,0,40);
+  const secondEnd=points.length;
+  const thirdCurve=Math.floor(random(-2,3));
+  addStripCurve(points,thirdCurve,0,50,middle.direction,middle.x,middle.y);
+  const pieceEnds=[firstEnd,secondEnd,points.length];
+  const pieceCenters=[];
+  let pieceStart=0;
+  for(let piece=0;piece<pieceEnds.length;piece++) {
+    let sumX=0;let sumY=0;let count=0;
+    for(let i=pieceStart;i<pieceEnds[piece];i++) {
+      const point=points[i];point.piece=piece;
+      if(point.x>=-40 && point.x<=W+40 && point.y>=-40 && point.y<=H+40) {
+        sumX+=point.x;sumY+=point.y;count++;
+      }
+    }
+    const midpoint=points[Math.floor((pieceStart+pieceEnds[piece])/2)];
+    pieceCenters.push(count>0?{x:sumX/count,y:sumY/count}:
+      {x:midpoint.x,y:midpoint.y});
+    pieceStart=pieceEnds[piece];
+  }
+  const visiblePoints=[];
+  for(const point of points) if(point.x>=-40 && point.x<=W+40 &&
+      point.y>=-40 && point.y<=H+40) visiblePoints.push(point);
+  const hazards=[];
+  for(let i=0;i<amount;i++) {
+    const point=i<points.length?points[i]:
+      visiblePoints.length>0?
+        visiblePoints[Math.floor((i-points.length)*visiblePoints.length/
+          (amount-points.length))]:
+        points[Math.floor(i*points.length/amount)];
+    const center=origin || pieceCenters[point.piece];
+    const lateral=Math.random()<0.3?
+      random(18,34)*(Math.random()<0.5?-1:1):random(-18,18);
+    const along=random(-14,14);
+    const x=point.x+point.nx*lateral+point.ny*along;
+    const y=point.y+point.ny*lateral-point.nx*along;
+    const size=random(11,22);
+    if(x<=-size || x>=W+size || y<=-size || y>=H+size) continue;
+    hazards.push({originX:center.x,originY:center.y,x:x,y:y,
+      size:size,rotation:random(0,360),
+      delay:clamp(point.x/W,0,1)*STRIP_FORMATION});
+  }
+  return hazards;
+}
+function clearStripCircles() {
+  for(const batch of [stripOrbsA,stripOrbsB,stripOrbsC,
+      stripOrbsD,stripOrbsE,stripOrbsF,stripMovingA,stripMovingB,
+      stripMovingC,stripMovingD,stripMovingE,stripMovingF]) batch.clear();
+}
+function startStrip(amount,origin) {
+  fight.attack="strip";fight.attackClock=0;
+  clearStripCircles();
+  const hazards=buildStripHazards(amount,origin);const cells={};
+  for(const hazard of hazards) {
+    const key=Math.floor(hazard.x/STRIP_CELL)+","+
+      Math.floor(hazard.y/STRIP_CELL);
+    if(!cells[key]) cells[key]=[];
+    cells[key].push(hazard);
+  }
+  fight.strip={age:0,hazards:hazards,cells:cells,settledCount:0};
+  fightMessage("THE INSIDE BREAKS THROUGH",2.2);
+}
+function startBodyStrip() {
+  startStrip();
+}
+function crushBossEggs(amount) {
+  for(let n=0;n<amount && bossEggsData.length>0;n++) {
+    let index=Math.floor(Math.random()*bossEggsData.length);
+    if(index===bossHeld && bossEggsData.length>1) index=(index+1)%bossEggsData.length;
+    bossEggBreak.x=bossEggsData[index].x;bossEggBreak.y=bossEggsData[index].y;
+    emitParticles(bossEggBreak,bossEggsData[index].big?20:13);
+    bossEggsData.splice(index,1);
+    if(index===bossHeld) bossHeld=-1;
+    else if(index<bossHeld) bossHeld--;
+  }
+}
+function crushBossEggsNear(x,y,radius) {
+  for(let i=bossEggsData.length-1;i>=0;i--) {
+    const e=bossEggsData[i];
+    if(dist2(e.x,e.y,x,y)>radius*radius) continue;
+    bossEggBreak.x=e.x;bossEggBreak.y=e.y;
+    emitParticles(bossEggBreak,e.big?20:13);
+    bossEggsData.splice(i,1);
+    if(i===bossHeld) bossHeld=-1;
+    else if(i<bossHeld) bossHeld--;
+  }
+}
+function phaseOneAttack() {
+  const roll=Math.floor(random(1,10));
+  if(roll===2 || roll===8) {
+    fight.slam={age:0,startY:fight.y};fight.invuln=1.2;
+    fightMessage("GROUND SLAM!",1.5);
+  } else if(roll===4 || roll===6) {
+    fight.hp=Math.min(fight.max,fight.hp+5);fightMessage("THE VOID MENDS ITSELF +5",1.5);
+  } else {
+    fight.teleport={age:0,x:random(190,450),y:random(150,290)};
+    if(roll===3 || roll===7) spawnBossEggs(6);
+    if(roll===9) spawnBossEggs(10);
+  }
+}
+function handAttack() {
+  fight.index=fight.index%(fight.phase===3?6:7)+1;
+  if(fight.index===1) {
+    const y=random(120,360);
+    moveHand(fight.left,197,y,1,"quartOut");
+    moveHand(fight.right,443,y,1,"quartOut");
+  } else if(fight.phase===2) {
+    if(fight.index===2) spawnBossEggs(1);
+    else if(fight.index===3) spawnBossEggs(6);
+    else if(fight.index===4 || fight.index===6) {
+      if(fight.index===6) spawnBossEggs(4);
+      const y=random(120,240);
+      moveHand(fight.left,197,y,1,"quartOut");
+      moveHand(fight.right,443,y,1,"quartOut");
+      fight.attack="drop";fight.attackClock=0;
+    } else if(fight.index===5) startMoveFour();
+    else startAvoidance();
+  } else {
+    if(fight.index===2) spawnBossEggs(3);
+    else if(fight.index===3) {
+      const y=random(120,240);
+      moveHand(fight.left,197,y,1,"quartOut");
+      moveHand(fight.right,443,y,1,"quartOut");
+      fight.attack="drop";fight.attackClock=0;
+    } else if(fight.index===4) startStrip();
+    else if(fight.index===5) startMoveFour();
+    else startAvoidance();
+  }
+}
+function bossDamage(i,hand) {
+  if(fight.finished) return;
+  if(fight.phase===1 && fight.invuln>0) return;
+  const e=bossEggsData[i];
+  if(!e) return;
+  fight.hp=Math.max(0,fight.hp-e.damage*(hand===1?2:1));
+  bossSparks.x=e.x;bossSparks.y=e.y;emitParticles(bossSparks,e.big?22:12);
+  bossEggBreak.x=e.x;bossEggBreak.y=e.y;emitParticles(bossEggBreak,e.big?22:15);
+  bossEggsData.splice(i,1);
+  if(i===bossHeld) bossHeld=-1;
+  else if(i<bossHeld) bossHeld--;
+  if(fight.phase===1 && fight.hp<=0) {
+    beginPhaseTwo();
+  } else if(fight.phase===2 && fight.hp<=Math.ceil(fight.max/2)) {
+    enterPhaseThree();
+  } else if(fight.phase===3 && fight.hp<=0) finishFight(true);
+}
+function bossPress(x,y) {
+  if(fight.finished) {backToDesk();return;}
+  if(paused) {
+    if(controlsOpen) {controlsOpen=false;fightPauseHint.text="D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME";return;}
+    if(inside(x,y,137,168,169,62)) {paused=false;setFightPauseVisible(false);fightCursor.visible=true;if(fight.attack!=="waves" && fight.attack!=="bodyWaves") Audio.resume(music);}
+    else if(inside(x,y,334,168,169,62)) startFight(fight.difficulty,fightBiome);
+    else if(inside(x,y,137,254,169,62)) backToDesk();
+    else if(inside(x,y,334,254,169,62)) showControls(true);
+    return;
+  }
+  if(inside(x,y,538+screenRightOffset(),83,78,36)) {pauseFight();return;}
+  cursor.x=x;cursor.y=y;lastPointer={x:x,y:y};cursor.vx=0;cursor.vy=0;
+  if(inside(x,y,284,425,113,43) || inside(x,y,404,425,113,43)) {
+    selectMeat(x<400?"meat":"electric");return;
+  }
+  for(let i=bossEggsData.length-1;i>=0;i--) {
+    const e=bossEggsData[i];
+    const grabRadius=(e.big?42:30)*e.size;
+    if(dist2(e.x,e.y,x,y)<grabRadius*grabRadius) {
+      bossHeld=i;e.vx=0;e.vy=0;return;
+    }
+  }
+}
+function bossRelease() {
+  if(heldMeat) {feedMeatAt(cursor.x,cursor.y,false);return;}
+  if(bossHeld<0 || bossHeld>=bossEggsData.length) return;
+  const e=bossEggsData[bossHeld];
+  const speed=Math.sqrt(cursor.vx*cursor.vx+cursor.vy*cursor.vy);
+  if(speed>=THROW_SPEED) {e.vx=cursor.vx*1.12;e.vy=cursor.vy*1.12;}
+  bossHeld=-1;
+}
+function pauseFight() {
+  paused=true;bossPauseSelection=0;controlsOpen=false;
+  stopMemeSound();
+  resetMenuInput();
+  fightCursor.visible=false;
+  setFightPauseVisible(true);Audio.pause(music);updatePauseButtons(true);
+}
+function backToDesk() {
+  if(music) Audio.stop(music);music=0;musicPath="";
+  stopMemeSound();heldMeat="";
+  if(!(fight && fight.won && blackHole)) cyanEncounter=false;
+  paused=false;setResultVisible(false);
+  state="desk";Scene.open("desk");refreshWorld();updateDeskSky(0);
+  updateDeskVisuals();updateFinalVisuals();
+  deskCursor.visible=true;
+  sceneSwitchDelay=0.16;
+}
+
+function updateBossVisuals() {
+  if(!fight) return;
+  updateMeatButtons(false);
+  const cyanHue=cyanEncounter || secretOvercharge?270:0;
+  for(const node of [bossGlow,bossAura,bossCore,bossRing,
+      leftGlow,rightGlow,leftHand,rightHand])
+    if(node.hue!==cyanHue) node.hue=cyanHue;
+  const shake=overchargeShake();
+  const shakeX=shake.x;const shakeY=shake.y;
+  if(fight.phase>=2) {
+    const opening=fight.transition>0?clamp(1-fight.transition/3.1,0,1):1;
+    const shell=clamp(1-opening/0.72,0,1);
+    bossGlow.visible=fight.transition>0 && shell>0;
+    bossAura.visible=fight.transition>0 && shell>0;
+    bossCore.visible=fight.transition>0 && shell>0;
+    bossRing.visible=fight.transition>0 && shell>0;
+    bossGlow.opacity=shell*0.35;bossAura.opacity=shell*0.2;
+    bossCore.opacity=shell;bossRing.opacity=shell;
+    const handsVisible=opening>=0.56;
+    leftGlow.visible=handsVisible;rightGlow.visible=handsVisible;
+    leftHand.visible=handsVisible;rightHand.visible=handsVisible;
+  } else {
+    bossGlow.visible=true;bossAura.visible=true;bossCore.visible=true;bossRing.visible=true;
+    bossGlow.opacity=0.45;bossAura.opacity=0.35;
+    bossCore.opacity=1;bossRing.opacity=1;
+    leftGlow.visible=false;rightGlow.visible=false;
+    leftHand.visible=false;rightHand.visible=false;
+  }
+  let shellScale=1;
+  if(fight.teleport) {
+    const t=fight.teleport.age;
+    shellScale=t<0.11?Math.max(0,1-t/0.11):
+      1-Math.pow(1-clamp((t-0.11)/0.34,0,1),4);
+  }
+  bossCore.scale=shellScale;bossRing.scale=shellScale;
+  bossGlow.scale=shellScale;bossAura.scale=shellScale;
+  bossGlow.x=fight.x-87*shellScale+shakeX;bossGlow.y=fight.y-87*shellScale+shakeY;
+  bossAura.x=fight.x-91*shellScale+shakeX;bossAura.y=fight.y-91*shellScale+shakeY;
+  bossCore.x=fight.x-61*shellScale+shakeX;bossCore.y=fight.y-61*shellScale+shakeY;
+  bossRing.x=fight.x-25*shellScale+shakeX;bossRing.y=fight.y-25*shellScale+shakeY;
+  leftHand.x=fight.left.x-37+shakeX;leftHand.y=fight.left.y-37+shakeY;
+  rightHand.x=fight.right.x-37+shakeX;rightHand.y=fight.right.y-37+shakeY;
+  leftGlow.x=fight.left.x-60+shakeX;leftGlow.y=fight.left.y-60+shakeY;
+  rightGlow.x=fight.right.x-60+shakeX;rightGlow.y=fight.right.y-60+shakeY;
+  leftHand.rotation=0;rightHand.rotation=0;
+  if(fight.strip) {
+    const age=fight.strip.age;
+    stripBeam.visible=age<STRIP_TELEGRAPH+STRIP_FORMATION+STRIP_EXTRUDE;
+    const pulse=age<STRIP_TELEGRAPH?Math.sin(age/STRIP_TELEGRAPH*Math.PI*10)*5:0;
+    stripBeam.width=62+pulse;stripBeam.x=35-stripBeam.width/2;
+  } else stripBeam.visible=false;
+
+  let redrawBossEggs=renderedBossEggCount!==bossEggsData.length;
+  if(!redrawBossEggs) for(const e of bossEggsData) {
+    if(e.drawX!==e.x || e.drawY!==e.y || e.drawAngle!==e.angle ||
+       e.drawBig!==e.big || e.drawBorn!==e.born || e.drawSize!==e.size) {
+      redrawBossEggs=true;break;
+    }
+  }
+  if(redrawBossEggs) {
+    const sprites=[];
+    for(const e of bossEggsData) {
+      const size=(e.big?BIG_BOSS_EGG_WIDTH:BOSS_EGG_WIDTH)*e.size*
+        (0.52+0.48*(1-Math.pow(1-clamp(e.born/0.32,0,1),3)));
+      sprites.push(spriteSpec(e.x,e.y,size,size*1.2,e.angle));
+      e.drawX=e.x;e.drawY=e.y;e.drawAngle=e.angle;e.drawBig=e.big;
+      e.drawBorn=e.born;e.drawSize=e.size;
+    }
+    setSprites(bossEggs,sprites);
+    renderedBossEggCount=bossEggsData.length;
+  }
+
+  let effectKey="";
+  for(const zone of fight.zones)
+    if(zone.age<7) effectKey+=(zone.age<2?"W":"H")+zone.x+","+zone.y+";";
+  for(const wave of fight.waves) {
+    if(wave.delay>0) effectKey+=(wave.delay<=wave.warningLead?
+      "T"+Math.floor(wave.delay*30):"Q")+wave.x+","+wave.y+";";
+    else if(wave.age<5 && wave.radius<=wave.limit)
+      effectKey+="R"+Math.floor(wave.radius)+","+Math.floor(wave.rotation*1000)+";";
+  }
+  if(fight.strip) effectKey+="S"+
+    (fight.strip.age<STRIP_TELEGRAPH+STRIP_FORMATION+STRIP_EXTRUDE?
+      Math.floor(fight.strip.age*30):"done");
+  if(effectKey!==lastEffectKey) {
+    const warnings=[];const hazards=[];const rings=[];
+    const stripSpritesA=[];const stripSpritesB=[];
+    const stripSpritesC=[];const stripSpritesD=[];
+    const stripSpritesE=[];const stripSpritesF=[];
+    const settledBatches=[stripOrbsA,stripOrbsB,stripOrbsC,
+      stripOrbsD,stripOrbsE,stripOrbsF];
+    let stripCount=0;
+    for(const node of alertNodes) node.visible=false;
+    let alertCount=0;
+    for(const zone of fight.zones) {
+      if(zone.age<2) {
+        warnings.push(spriteSpec(zone.x,zone.y,72,72));
+        if(alertCount<alertNodes.length) {
+          const mark=alertNodes[alertCount++];mark.x=zone.x-10;mark.y=zone.y-39;
+          mark.visible=true;
+        }
+      } else if(zone.age<7) hazards.push(spriteSpec(zone.x,zone.y,83,83));
+    }
+    for(const wave of fight.waves) {
+      if(wave.delay>0 && wave.delay<=wave.warningLead) {
+        const warningProgress=1-wave.delay/wave.warningLead;
+        const pulse=1+Math.sin(warningProgress*Math.PI*8)*0.12;
+        warnings.push(spriteSpec(wave.x,wave.y,64*pulse,64*pulse));
+        if(alertCount<alertNodes.length) {
+          const mark=alertNodes[alertCount++];mark.x=wave.x-10;mark.y=wave.y-36;
+          mark.visible=true;
+        }
+      } else if(wave.age<5 && wave.radius<=wave.limit) {
+        rings.push(spriteSpec(wave.x,wave.y,wave.radius*2,wave.radius*2,
+          wave.rotation*180/Math.PI));
+      }
+    }
+    if(fight.strip) {
+      const age=fight.strip.age;
+      if(age<STRIP_TELEGRAPH && alertCount<alertNodes.length) {
+        const mark=alertNodes[alertCount++];mark.x=19;mark.y=190;
+        mark.visible=true;
+      }
+      const fieldAge=age-STRIP_TELEGRAPH;
+      if(fieldAge>=0) for(const hazard of fight.strip.hazards) {
+        const localAge=fieldAge-hazard.delay;
+        if(localAge<0) continue;
+        if(localAge>=STRIP_EXTRUDE) {
+          if(!hazard.settled) {
+            hazard.settled=true;
+            if(hazard.x>-hazard.size && hazard.x<W+hazard.size &&
+                hazard.y>-hazard.size && hazard.y<H+hazard.size) {
+              centered(settledBatches[fight.strip.settledCount%6],
+                hazard.x,hazard.y,hazard.size,hazard.size,
+                {rotation:hazard.rotation});
+              fight.strip.settledCount++;
+            }
+          }
+          continue;
+        }
+        const localProgress=clamp(localAge/STRIP_EXTRUDE,0,1);
+        const progress=(1-Math.pow(0.8,13*localProgress)) /
+          (1-Math.pow(0.8,13));
+        const x=hazard.originX+(hazard.x-hazard.originX)*progress;
+        const y=hazard.originY+(hazard.y-hazard.originY)*progress;
+        const size=5+(hazard.size-5)*progress;
+        if(x>-size && x<W+size && y>-size && y<H+size) {
+          const sprite=spriteSpec(x,y,size,size,hazard.rotation);
+          if(stripCount%6===0) stripSpritesA.push(sprite);
+          else if(stripCount%6===1) stripSpritesB.push(sprite);
+          else if(stripCount%6===2) stripSpritesC.push(sprite);
+          else if(stripCount%6===3) stripSpritesD.push(sprite);
+          else if(stripCount%6===4) stripSpritesE.push(sprite);
+          else stripSpritesF.push(sprite);
+          stripCount++;
+        }
+      }
+    }
+    setSprites(avoidMarkers,warnings);
+    setSprites(avoidHazards,hazards);
+    setSprites(shockRings,rings);
+    if(fight.strip) {
+      setSprites(stripMovingA,stripSpritesA);
+      setSprites(stripMovingB,stripSpritesB);
+      setSprites(stripMovingC,stripSpritesC);
+      setSprites(stripMovingD,stripSpritesD);
+      setSprites(stripMovingE,stripSpritesE);
+      setSprites(stripMovingF,stripSpritesF);
+    }
+    lastEffectKey=effectKey;
+  }
+  if(fight.transition>0) {
+    const frame=Math.floor((3.1-fight.transition)*30);
+    if(frame!==lastBreakoutFrame) {
+      const fragments=[];
+      const progress=clamp(1-fight.transition/3.1,0,1);
+      for(let i=0;i<72;i++) {
+        const angle=i*2.39996;
+        const range=10+progress*(45+(i%11)*22);
+        const x=fight.x+Math.cos(angle)*range;
+        const y=fight.y+Math.sin(angle)*range;
+        const size=5+(i%7)*3;
+        fragments.push(spriteSpec(x,y,size,size,angle*57));
+      }
+      setSprites(breakoutField,fragments);
+      lastBreakoutFrame=frame;
+    }
+  } else if(lastBreakoutFrame!==-1) {
+    setSprites(breakoutField,[]);lastBreakoutFrame=-1;
+  }
+
+  if(fight.phase===3) {
+    fightWhite.opacity=clamp(fight.white/0.35,0,1);
+    fightBlack.opacity=0;
+    for(const field of [interiorFieldA,interiorFieldB,interiorFieldC,interiorFieldD])
+      field.opacity=0;
+  } else if(fight.phase===2) {
+    fightWhite.opacity=0;fightBlack.opacity=1;
+    for(const field of [interiorFieldA,interiorFieldB,interiorFieldC,interiorFieldD])
+      field.opacity=1;
+  } else {
+    fightWhite.opacity=0;fightBlack.opacity=0;
+    for(const field of [interiorFieldA,interiorFieldB,interiorFieldC,interiorFieldD])
+      field.opacity=0;
+  }
+  const bossName="UNDEF";
+  bossPhase.text=fight.phase===1?bossName+" / PHASE I":
+    fight.phase===2?bossName+" / HANDS":bossName+" / PHASE III";
+  bossHP.text=String(Math.ceil(fight.hp))+" / "+String(fight.max);
+  bossHealthFill.width=578*clamp(fight.hp/fight.max,0,1);
+  playerHP.text="YOU "+String(Math.ceil(fight.player))+" / 100";
+  bossMessage.text=heldMeat?"MOVE MEAT TO UNDEF • A TO FEED":
+    fight.messageClock>0?fight.message:
+    "DRAG OR THROW EGGS INTO "+bossName;
+  fightCursor.x=cursor.x-5;fightCursor.y=cursor.y-5;
+}
+function waveHits(x,y,wave) {
+  if(wave.radius>wave.limit) return false;
+  const dx=x-wave.x; const dy=y-wave.y;
+  if(Math.abs(dx)>wave.radius*1.42 || Math.abs(dy)>wave.radius*1.42) return false;
+  const localX=dx*wave.c-dy*wave.s;const localY=dx*wave.s+dy*wave.c;
+  const u=localX/(wave.radius*2)+0.5;
+  const v=localY/(wave.radius*2)+0.5;
+  if(u<0 || u>=1 || v<0 || v>=1) return false;
+  return Collision.alpha("assets/shockwave-hitbox.png",u*278,v*278,0.14);
+}
+function waveHitsEgg(egg,wave) {
+  const radius=(egg.big?27:19)*egg.size;
+  return waveHits(egg.x,egg.y,wave) ||
+    waveHits(egg.x+radius,egg.y,wave) || waveHits(egg.x-radius,egg.y,wave) ||
+    waveHits(egg.x,egg.y+radius,wave) || waveHits(egg.x,egg.y-radius,wave);
+}
+function updateFight(dt) {
+  if(!fight || paused || fight.finished || secretOvercharge) return;
+  dt=Math.min(dt,0.1);
+  tickMemeSound(dt);
+  keepMusicPlaying(dt);
+  fight.invuln=Math.max(0,fight.invuln-dt);
+  fight.playerInvuln=Math.max(0,fight.playerInvuln-dt);
+  fight.messageClock=Math.max(0,fight.messageClock-dt);
+  fight.transition=Math.max(0,fight.transition-dt);
+  fight.white=Math.max(0,fight.white-dt);
+  for(const hand of [fight.left,fight.right]) if(hand.t<hand.duration) {
+    hand.t=Math.min(hand.duration,hand.t+dt);
+    const progress=hand.t/hand.duration;
+    hand.x=hand.fromX+(hand.targetX-hand.fromX)*handEase(hand.easingX,progress);
+    hand.y=hand.fromY+(hand.targetY-hand.fromY)*handEase(hand.easingY,progress);
+  }
+  if(fight.teleport) {
+    fight.teleport.age+=dt;
+    if(fight.teleport.age>=0.11 && !fight.teleport.moved) {
+      fight.x=fight.teleport.x;fight.y=fight.teleport.y;
+      fight.teleport.moved=true;
+    }
+    if(fight.teleport.age>=0.45) fight.teleport=null;
+  }
+  if(fight.slam) {
+    fight.slam.age+=dt;
+    const t=fight.slam.age;
+    if(t<0.24) fight.y=fight.slam.startY+(365-fight.slam.startY)*Math.pow(t/0.24,3);
+    else if(t<0.66) fight.y=365+(fight.slam.startY-365)*(1-Math.pow(1-(t-0.24)/0.42,4));
+    else {fight.y=fight.slam.startY;fight.slam=null;}
+    if(t>=0.24 && t-dt<0.24) crushBossEggs(3);
+  }
+  if(fight.bodyMotion) {
+    const motion=fight.bodyMotion;
+    motion.age=Math.min(motion.duration,motion.age+dt);
+    const progress=motion.age/motion.duration;
+    fight.x=motion.fromX+(motion.targetX-motion.fromX)*
+      handEase(motion.easingX,progress);
+    fight.y=motion.fromY+(motion.targetY-motion.fromY)*
+      handEase(motion.easingY,progress);
+    if(motion.age>=motion.duration) fight.bodyMotion=null;
+  }
+  if(fight.attack!=="") {
+    fight.attackClock+=dt;
+    if(fight.attack==="bodyDrop") {
+      const drop=fight.bodyDrop;
+      if(drop && fight.attackClock>=1 && !drop.dropping) {
+        drop.dropping=true;moveBody(320,420,2,"elasticIn");
+      }
+      if(drop && fight.attackClock>=3 && !drop.cleared) {
+        drop.cleared=true;crushBossEggs(bossEggsData.length);
+        fightMessage("THE BODY ERASED EVERY EGG",1.6);
+      }
+      if(fight.attackClock>=3.1) {fight.bodyDrop=null;fight.attack="";}
+    } else if(fight.attack==="drop") {
+      if(fight.attackClock>=1 && fight.attackClock-dt<1) {
+        moveHand(fight.left,197,420,2,"elasticIn");
+        moveHand(fight.right,443,420,2,"elasticIn");
+      }
+      if(fight.attackClock>=3 && fight.attackClock-dt<3)
+        crushBossEggs(bossEggsData.length);
+      if(fight.attackClock>3.1) fight.attack="";
+    } else if(fight.attack==="avoidance") {
+      if(fight.attackClock>=1.1 && !fight.avoidWindup) {
+        fight.avoidWindup=true;
+        moveHand(fight.left,135.5,264,0.8,"sineInOut");
+        moveHand(fight.right,258.5,120,0.8,"sineInOut");
+      }
+      if(fight.attackClock>=1.9 && !fight.avoidCross) {
+        fight.avoidCross=true;
+        moveHand(fight.left,W,456,1,"expoIn","cubicIn");
+        moveHand(fight.right,W,240,1,"expoIn","cubicIn");
+      }
+      if(fight.attackClock>=3.1 && !fight.zonesSpawned) {
+        fight.zonesSpawned=true;
+        for(let i=0;i<20;i++) fight.zones.push({x:random(30,610),y:random(125,455),age:0});
+      }
+      if(fight.attackClock>9.5) {fight.attack="";fight.zones=[];}
+    } else if(fight.attack==="strip") {
+      fight.strip.age+=dt;
+      if(fight.attackClock>STRIP_TELEGRAPH+STRIP_FIELD_TIME) {
+        clearStripCircles();
+        fight.strip=null;fight.attack="";
+      }
+    } else if(fight.attack==="waves") {
+      const move=fight.moveFour;
+      if(move && fight.attackClock>=1.7 && !move.wavesStarted) {
+        move.wavesStarted=true;startShockwaves();
+      }
+      if(move && fight.attackClock>=2.4 && !move.leftNudge) {
+        move.leftNudge=true;moveHand(fight.left,320,168,0.2,"quartOut");
+      }
+      if(move && fight.attackClock>=4.4 && !move.rightNudge) {
+        move.rightNudge=true;moveHand(fight.right,320,372,0.2,"quartOut");
+      }
+      if(fight.attackClock>9.7) {
+        fight.attack="";fight.waves=[];fight.moveFour=null;Audio.resume(music);
+      }
+    } else if(fight.attack==="bodyWaves") {
+      const move=fight.moveFour;
+      if(move && fight.attackClock>=1.7 && !move.wavesStarted) {
+        move.wavesStarted=true;startShockwaves();
+      }
+      if(move && fight.attackClock>=2.4 && !move.leftNudge) {
+        move.leftNudge=true;moveBody(320,168,0.2,"quartOut");
+      }
+      if(move && fight.attackClock>=4.4 && !move.rightNudge) {
+        move.rightNudge=true;moveBody(320,372,0.2,"quartOut");
+      }
+      if(fight.attackClock>9.7) {
+        fight.attack="";fight.waves=[];fight.moveFour=null;Audio.resume(music);
+      }
+    } else if(fight.attack==="bodyAvoidance") {
+      if(fight.attackClock>=1.1 && !fight.avoidWindup) {
+        fight.avoidWindup=true;moveBody(135.5,264,0.8,"sineInOut");
+      }
+      if(fight.attackClock>=1.9 && !fight.avoidCross) {
+        fight.avoidCross=true;moveBody(W,456,1,"expoIn","cubicIn");
+      }
+      if(fight.attackClock>=3.1 && !fight.zonesSpawned) {
+        fight.zonesSpawned=true;
+        for(let i=0;i<20;i++)
+          fight.zones.push({x:random(30,610),y:random(125,455),age:0});
+        moveBody(320,215,0.7,"quartOut");
+      }
+      if(fight.attackClock>10.2) {fight.attack="";fight.zones=[];}
+    }
+  }
+  for(let i=fight.zones.length-1;i>=0;i--) {
+    const z=fight.zones[i];z.age+=dt;
+    if(z.age>=2 && z.age<7 && dist2(cursor.x,cursor.y,z.x,z.y)<42*42) {
+      damagePlayer(5);fight.zones.splice(i,1);
+    } else if(z.age>=7) fight.zones.splice(i,1);
+  }
+  for(const wave of fight.waves) {
+    if(wave.delay>0) {
+      wave.delay-=dt;
+      if(wave.delay<=0 && !wave.sounded) {
+        wave.sounded=true;Audio.play("audio/shockwave-whoosh.wav",{volume:0.5});
+      }
+      continue;
+    }
+    wave.age+=dt;wave.radius=7+958*clamp(wave.age/5,0,1);
+    if(fight.phase===3 && wave.radius<=wave.limit) {
+      wave.rotation+=Math.PI/4*dt;
+      wave.c=Math.cos(-wave.rotation);wave.s=Math.sin(-wave.rotation);
+    }
+    if(waveHits(cursor.x,cursor.y,wave) && wave.hit<=0) {
+      damagePlayer(5);wave.hit=0.44;
+    }
+    wave.hit=Math.max(0,wave.hit-dt);
+  }
+  if(fight.strip && fight.strip.age>=STRIP_TELEGRAPH+STRIP_FORMATION+STRIP_EXTRUDE &&
+      fight.strip.age<=STRIP_TELEGRAPH+STRIP_FIELD_TIME &&
+      fight.playerInvuln<=0) {
+    const cellX=Math.floor(cursor.x/STRIP_CELL);
+    const cellY=Math.floor(cursor.y/STRIP_CELL);
+    let hit=false;
+    for(let row=cellY-1;row<=cellY+1 && !hit;row++)
+      for(let column=cellX-1;column<=cellX+1 && !hit;column++) {
+      const nearby=fight.strip.cells[column+","+row];
+      if(!nearby) continue;
+      for(const hazard of nearby) {
+        const dx=cursor.x-hazard.x;const dy=cursor.y-hazard.y;
+        const radius=hazard.size/2+9;
+        if(Math.abs(dx)<radius && Math.abs(dy)<radius && dx*dx+dy*dy<radius*radius) {
+          damagePlayer(1);fight.playerInvuln=0.12;hit=true;break;
+        }
+      }
+    }
+  }
+
+  const bossFriction=Math.exp(-1.7*dt);
+  for(let i=bossEggsData.length-1;i>=0;i--) {
+    const e=bossEggsData[i];
+    e.born=Math.min(0.32,e.born+dt);
+    if(i===bossHeld) {e.x=cursor.x;e.y=cursor.y;}
+    else {
+      const speed=Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+      if(speed>MAX_SPEED) {e.vx=e.vx/speed*MAX_SPEED;e.vy=e.vy/speed*MAX_SPEED;}
+      e.x+=e.vx*dt;e.y+=e.vy*dt;
+      e.vx*=bossFriction;e.vy*=bossFriction;e.angle+=e.vx*dt*0.08;
+      if(e.vx*e.vx+e.vy*e.vy<25) {e.vx=0;e.vy=0;}
+      const halfWidth=(e.big?BIG_BOSS_EGG_WIDTH:BOSS_EGG_WIDTH)*e.size*0.5;
+      const bottom=H-(e.big?BIG_BOSS_EGG_WIDTH:BOSS_EGG_WIDTH)*e.size*0.6;
+      if(e.x<halfWidth || e.x>W-halfWidth) e.vx=-e.vx*0.6;
+      if(e.y<120 || e.y>bottom) e.vy=-e.vy*0.6;
+      e.x=clamp(e.x,halfWidth,W-halfWidth);e.y=clamp(e.y,120,bottom);
+    }
+    let destroyed=false;
+    for(const wave of fight.waves) if(wave.delay<=0 && waveHitsEgg(e,wave)) {
+      bossEggBreak.x=e.x;bossEggBreak.y=e.y;emitParticles(bossEggBreak,e.big?22:15);
+      bossEggsData.splice(i,1);if(i===bossHeld) bossHeld=-1;
+      else if(i<bossHeld) bossHeld--;
+      destroyed=true;break;
+    }
+    if(destroyed) continue;
+    if(fight.phase===1 && dist2(e.x,e.y,fight.x,fight.y)<46*46) {
+      bossDamage(i,0);continue;
+    }
+    if(fight.phase>=2 && dist2(e.x,e.y,fight.left.x,fight.left.y)<35*35) {
+      bossDamage(i,1);continue;
+    }
+    if(fight.phase>=2 && dist2(e.x,e.y,fight.right.x,fight.right.y)<35*35) {
+      bossDamage(i,2);continue;
+    }
+  }
+  if(fight.finished) {updateBossVisuals();return;}
+  fight.clock-=dt;
+  if(fight.clock<=0 && fight.transition<=0 && fight.attack==="") {
+    if(fight.phase===1) phaseOneAttack();
+    else handAttack();
+    fight.clock=fight.phase===1?random(2.0,3.3):random(2.7,4.4);
+    spawnBossEggs(2);
+  }
+  if(bossEggsData.length<3 && fight.transition<=0) spawnBossEggs(3);
+  updateBossVisuals();
+}
+
+function choosePause(boss) {
+  const pick=boss?bossPauseSelection:pauseSelection;
+  if(boss) {
+    if(pick===0) {paused=false;setFightPauseVisible(false);fightCursor.visible=true;if(fight.attack!=="waves" && fight.attack!=="bodyWaves") Audio.resume(music);}
+    if(pick===1) startFight(fight.difficulty,fightBiome);
+    if(pick===2) backToDesk();
+    if(pick===3) showControls(true);
+  } else {
+    if(pick===0) {
+      paused=false;setDeskPauseVisible(false);deskCursor.visible=true;
+      if(finalFight && music) Audio.resume(music);
+    }
+    if(pick===1) openQuests();
+    if(pick===2) {
+      if(finalFight) deskPauseHint.text="SHOP CLOSED DURING PHASE IV";
+      else openMarket("shop");
+    }
+    if(pick===3) {
+      if(finalFight) deskPauseHint.text="BAG CLOSED DURING PHASE IV";
+      else openMarket("bag");
+    }
+    if(pick===4) {
+      if(finalFight) {
+        if(music) Audio.stop(music);music=0;musicPath="";
+        loadGame(slot);
+      }
+      else {saveGame();paused=false;showSaves();}
+    }
+    if(pick===5) showControls(false);
+  }
+}
+function resetMenuInput() {
+  menuLatch=true;
+  menuCooldown=0;
+  menuReleaseTime=0;
+}
+function moveGridSelection(index, direction, count) {
+  const col=index%2;
+  if(direction==="left") return col===1?index-1:index;
+  if(direction==="right") return col===0 && index+1<count?index+1:index;
+  if(direction==="up") return index>=2?index-2:index;
+  return index+2<count?index+2:index;
+}
+function moveQuestSelection(direction) {
+  const page=Math.floor(questSelection/9);
+  const local=questSelection%9;
+  const row=Math.floor(local/3);
+  const col=local%3;
+  let next=questSelection;
+  if(direction==="left" && col>0) next--;
+  else if(direction==="right" && col<2 && next+1<QUESTS.length) next++;
+  else if(direction==="up") {
+    if(row>0) next-=3;
+    else if(page>0) next=Math.min((page-1)*9+6+col,questSelection-1);
+  } else if(direction==="down") {
+    if(row<2 && next+3<QUESTS.length) next+=3;
+    else if(row===2 && (page+1)*9<QUESTS.length)
+      next=Math.min((page+1)*9+col,QUESTS.length-1);
+  }
+  questSelection=next;
+  updateQuestGrid();
+}
+function menuMove(direction) {
+  if(state==="saves") {
+    if(direction==="left") slot=Math.max(0,slot-1);
+    if(direction==="right") slot=Math.min(2,slot+1);
+    updateSaveCards();
+  } else if(state==="desk" && questOpen) {
+    moveQuestSelection(direction);
+  } else if(state==="desk" && marketOpen) {
+    if(pickerOpen) moveSellPickerSelection(direction);
+    else {
+      marketSelection=moveGridSelection(marketSelection,direction,
+        marketTab==="shop"?4:6);
+      marketMessage="";updateMarketUi();
+    }
+  } else if(state==="desk" && paused) {
+    pauseSelection=moveGridSelection(pauseSelection,direction,6);updatePauseButtons(false);
+  } else if(state==="fight" && paused) {
+    bossPauseSelection=moveGridSelection(bossPauseSelection,direction,4);updatePauseButtons(true);
+  }
+}
+function updateMenuDirections(dt) {
+  const x=GamePad.leftX; const y=GamePad.leftY;
+  menuCooldown=Math.max(0,menuCooldown-dt);
+  let direction=null;
+  if(GamePad.pressed.left || Keyboard.pressed.left) direction="left";
+  else if(GamePad.pressed.right || Keyboard.pressed.right) direction="right";
+  else if(GamePad.pressed.up || Keyboard.pressed.up) direction="up";
+  else if(GamePad.pressed.down || Keyboard.pressed.down) direction="down";
+  const mag=Math.max(Math.abs(x),Math.abs(y));
+  if(direction) {
+    menuLatch=true;
+    menuReleaseTime=0;
+    if(menuCooldown<=0) {menuMove(direction);menuCooldown=0.16;}
+    return;
+  }
+  if(mag<0.25) {
+    menuReleaseTime+=dt;
+    if(menuReleaseTime>=0.07) menuLatch=false;
+    return;
+  }
+  menuReleaseTime=0;
+  if(mag>=0.7 && !menuLatch && menuCooldown<=0) {
+    menuLatch=true;
+    menuCooldown=0.16;
+    if(Math.abs(x)>Math.abs(y)) menuMove(x<0?"left":"right");
+    else menuMove(y>0?"up":"down");
+  }
+}
+function updateWorldCursor(dt) {
+  const x=GamePad.leftX; const y=GamePad.leftY;
+  const magnitude=Math.sqrt(x*x+y*y);
+  if(magnitude<=0.16) return;
+  const speed=85+390*Math.pow(clamp((magnitude-0.16)/0.84,0,1),1.35);
+  const nextX=clamp(cursor.x+x/magnitude*speed*dt,
+    state==="desk"?VIEW_LEFT:0,state==="desk"?VIEW_RIGHT:W);
+  const nextY=clamp(cursor.y-y/magnitude*speed*dt,0,H);
+  if(state==="desk") {
+    panning=false;pointerDown=false;
+    deskMove(nextX,nextY,dt);
+  } else {
+    cursor.vx=(nextX-cursor.x)/Math.max(dt,0.016);
+    cursor.vy=(nextY-cursor.y)/Math.max(dt,0.016);
+    cursor.x=nextX;cursor.y=nextY;
+  }
+  lastPointer={x:cursor.x,y:cursor.y};
+}
+
+function load() {
+  Scene.open("title");
+  marketInfo.text="MAKE MONEY!\nBREAK AN EGG +$5\nFRY AN EGG +$10\nBEAT UNDEF +$100";
+  for(const node of [windTrailA,windTrailB,windTrailC,windTrailD,windTrailE,
+    windTrailF,windTrailG,windTrailH,windTrailI,windTrailJ])
+    windSlots.push({node:node,x:null,y:null});
+  for(let i=0;i<9;i++) {
+    const x=26+(i%3)*200;const y=90+Math.floor(i/3)*89;
+    questTiles.push(spawn("questTile","questGrid",x,y));
+  }
+  for(let i=0;i<22;i++) {
+    const mark=spawn("alertMark","fightWarnings",0,0);
+    mark.visible=false;alertNodes.push(mark);
+  }
+  for(let i=0;i<MAX_RENDER_EGGS;i++) {
+    const mark=spawn("scaredEggMark","scaredEggMarks",0,0);
+    mark.text="!";mark.visible=false;scareMarkNodes.push(mark);
+  }
+  updateQuestGrid();
+  setDeskPauseVisible(false);setQuestsVisible(false);setMarketVisible(false);
+  setSellPickerVisible(false);
+  setFinalWinVisible(false);
+  setFightPauseVisible(false);setResultVisible(false);
+  cursor={x:320,y:240,vx:0,vy:0};
+  lastPointer={x:320,y:240};
+}
+
+function update(dt) {
+  dt=Math.min(dt,0.1);
+  refreshScreenLayout();
+  if(sceneSwitchDelay>0) {sceneSwitchDelay=Math.max(0,sceneSwitchDelay-dt);return;}
+  if(secretOvercharge) {
+    secretClock-=dt;
+    if(state==="fight") updateBossVisuals();
+    else updateFinalVisuals();
+    if(secretClock<=0 && (!secretSound || !Audio.isPlaying(secretSound))) {
+      if(secretSound) Audio.stop(secretSound);
+      secretSound=0;secretOvercharge=false;
+      startCredits("fake");
+    }
+    return;
+  }
+  tickEconomy(dt);
+  if(state==="desk" && !finalFight && (paused || questOpen || marketOpen)) {
+    saveClock-=dt;
+    if(saveClock<=0) {saveClock=8;saveGame();}
+  }
+  const accept=GamePad.pressed.A || Keyboard.pressed.enter || Keyboard.pressed.space;
+  const back=GamePad.pressed.B || Keyboard.pressed.escape;
+  const click=Mouse.pressed.left;
+  if(state==="credits") {updateCredits(dt,accept || back || click);return;}
+  if(state==="title") {
+    updateMenuDirections(dt);
+    if(accept || click) showSaves();
+    titleEgg.y=129+Math.sin(Time.seconds*2.4)*5;
+    return;
+  }
+  if(state==="saves") {
+    updateMenuDirections(dt);
+    if(back) showTitle();
+    else if(click) {
+      for(let i=0;i<3;i++) {
+        if(inside(Mouse.x,Mouse.y,28+i*201,119,181,267)) {
+          loadGame(i);break;
+        }
+      }
+    } else if(accept) loadGame(slot);
+    return;
+  }
+  if(state==="finalWin") {
+    if(accept || back || click) {
+      state="desk";setFinalWinVisible(false);deskCursor.visible=true;
+      sceneSwitchDelay=0.16;
+    }
+    return;
+  }
+  if(state==="desk") {
+    if(questOpen || paused || marketOpen) {
+      if(questOpen && GamePad.pressed.ZL) changeQuestPage(-1);
+      else if(questOpen && GamePad.pressed.ZR) changeQuestPage(1);
+      else if(marketOpen && (GamePad.pressed.ZL || GamePad.pressed.ZR)) {
+        if(pickerOpen) changeSellPickerTab(GamePad.pressed.ZL?-1:1);
+        else {
+          marketTab=marketTab==="shop"?"bag":"shop";
+          marketSelection=0;marketMessage="";updateMarketUi();
+        }
+      }
+      else updateMenuDirections(dt);
+      if(back) {
+        if(marketOpen) closeMarket();
+        else if(questOpen) {
+          questOpen=false;setQuestsVisible(false);deskCursor.visible=true;
+          if(finalFight && music) Audio.resume(music);
+        }
+        else if(controlsOpen) {controlsOpen=false;deskPauseHint.text="D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME";}
+        else {
+          paused=false;setDeskPauseVisible(false);deskCursor.visible=true;
+          if(finalFight && music) Audio.resume(music);
+        }
+      } else if(accept) {
+        if(marketOpen) {
+          if(pickerOpen) chooseSellPickerItem();
+          else chooseMarketOption();
+        }
+        else if(questOpen) {
+          questOpen=false;setQuestsVisible(false);deskCursor.visible=true;
+          if(finalFight && music) Audio.resume(music);
+        }
+        else if(controlsOpen) {controlsOpen=false;deskPauseHint.text="D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME";}
+        else choosePause(false);
+      }
+      if(click) deskPress(Mouse.x,Mouse.y,false);
+      return;
+    }
+    if(GamePad.pressed.plus || back) pauseDesk();
+    else if(GamePad.pressed.X || Keyboard.pressed.q) openQuests();
+    else if(GamePad.pressed.Y || Keyboard.pressed.i) openMarket("bag");
+    else if(accept) {
+      if(held>=0 || heldMeat) deskRelease();
+      else deskPress(cursor.x,cursor.y,false);
+    }
+    if(click) deskPress(Mouse.x,Mouse.y,true);
+    if(Mouse.left && (pointerDown || held>=0 || panning)) deskMove(Mouse.x,Mouse.y,dt);
+    if(Mouse.released.left) deskRelease();
+    if(!Mouse.left && !panning) updateWorldCursor(dt);
+    updateDesk(dt);
+    return;
+  }
+  if(state==="fight") {
+    if(fight.finished) {
+      if(accept || back || click) backToDesk();
+      return;
+    }
+    if(paused) {
+      updateMenuDirections(dt);
+      if(back) {
+        if(controlsOpen) {controlsOpen=false;fightPauseHint.text="D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME";}
+        else {paused=false;setFightPauseVisible(false);fightCursor.visible=true;if(fight.attack!=="waves" && fight.attack!=="bodyWaves") Audio.resume(music);}
+      } else if(accept) {
+        if(controlsOpen) {controlsOpen=false;fightPauseHint.text="D-PAD / LEFT STICK CHOOSE  •  A SELECT  •  B RESUME";}
+        else choosePause(true);
+      }
+      if(click) bossPress(Mouse.x,Mouse.y);
+      return;
+    }
+    if(GamePad.pressed.plus || back) pauseFight();
+    else if(accept) {
+      if(bossHeld>=0 || heldMeat) bossRelease();
+      else bossPress(cursor.x,cursor.y);
+    }
+    if(click) bossPress(Mouse.x,Mouse.y);
+    if(Mouse.left && (bossHeld>=0 || heldMeat)) {
+      const dx=Mouse.x-lastPointer.x; const dy=Mouse.y-lastPointer.y;
+      cursor.vx=clamp(dx/Math.max(dt,0.016),-550,550);
+      cursor.vy=clamp(dy/Math.max(dt,0.016),-550,550);
+      cursor.x=Mouse.x;cursor.y=Mouse.y;
+      lastPointer={x:Mouse.x,y:Mouse.y};
+    } else if(!Mouse.left) updateWorldCursor(dt);
+    if(Mouse.released.left) bossRelease();
+    updateFight(dt);
+  }
+}
+
+#titleStart on click { if(state==="title" && sceneSwitchDelay<=0) showSaves(); }
+#saveOne on click { if(state==="saves" && sceneSwitchDelay<=0) loadGame(0); }
+#saveTwo on click { if(state==="saves" && sceneSwitchDelay<=0) loadGame(1); }
+#saveThree on click { if(state==="saves" && sceneSwitchDelay<=0) loadGame(2); }
+
+
+
+

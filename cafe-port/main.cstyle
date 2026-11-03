@@ -1,0 +1,208 @@
+text { font-source: url("assets/Handlee-Regular.ttf"); }
+button { font-source: url("assets/Handlee-Regular.ttf"); }
+panel { font-source: url("assets/Handlee-Regular.ttf"); }
+image { fill: transparent; }
+spritebatch { fill: transparent; }
+
+.sky-title { fill: linear-gradient(to bottom, #be10f2, #5665dc 59%, #03b9e9); }
+.sky-plains { fill: linear-gradient(to bottom, #49dc7c, #13b5ad 55%, #138ee0); }
+.sky-pinball { fill: linear-gradient(to bottom, #f332b7, #a033dc 52%, #4b21b1); }
+.sky-frying { fill: linear-gradient(to bottom, #ffce41, #ff8845 52%, #ef4151); }
+.sky-magnet { fill: linear-gradient(to bottom, #42dce8, #348dcf 52%, #3745a8); }
+.sky-sticky { fill: linear-gradient(to bottom, #c5ea45, #74c75d 52%, #408b68); }
+.sky-wind { fill: linear-gradient(to bottom, #b1edff, #65b9f0 52%, #468bdc); }
+.phase-black { fill: #080410; }
+.phase-white { fill: #ffffff; }
+
+.title-sticker {
+  fill: linear-gradient(to bottom, #fff8d3, #ffe8a6);
+  border: 4px solid #5c196f;
+  border-radius: 24px;
+}
+.title-ink { color: #58116f; font-size: 57px; }
+.title-sub { color: #fff6d7; font-size: 26px; }
+.page-title { color: #fff4ba; font-size: 42px; }
+.hint { color: #fff7da; font-size: 16px; }
+.hint-dark { color: #4b185f; font-size: 17px; }
+.gold-button {
+  fill: linear-gradient(to bottom, #ffe765, #ffac2f);
+  border: 4px solid #6b2379;
+  border-radius: 22px;
+  color: #5b176b;
+  font-size: 27px;
+  inset-shadow: 0 2px 7px #ffffff77;
+}
+.gold-button:focus { fill: linear-gradient(to bottom, #fff6aa, #ffbf49); }
+.gold-button:pressed { fill: #f99428; }
+.title-selection { color: #fff7d1; font-size: 34px; }
+
+
+.save-card {
+  fill: linear-gradient(to bottom, #fff8d5, #ffeaa9);
+  border: 4px solid #6a2479;
+  border-radius: 23px;
+  color: #571669;
+  font-size: 28px;
+}
+.save-card:disabled {
+  fill: linear-gradient(to bottom, #fff4ac, #ffc753);
+  border: 4px solid #571669;
+}
+.save-title { color: #571669; font-size: 30px; }
+.save-info { color: #752b80; font-size: 19px; }
+
+.hud-ribbon {
+  fill: linear-gradient(to bottom, #fff9dc, #f8d9f2 52%, #d3edff);
+  border: 4px solid #692177;
+  border-radius: 18px;
+}
+.hud-title { color: #4a135e; font-size: 25px; }
+.hud-small { color: #fff4d1; font-size: 17px; }
+.map-hint-panel { fill: #4a206fef; border: 2px solid #fff4d0; border-radius: 10px; }
+.hud-wallet { color: #6d2b42; font-size: 21px; }
+.hud-button {
+  fill: linear-gradient(to bottom, #b552d7, #76269e);
+  border: 2px solid #fff2d2;
+  border-radius: 12px;
+  color: #fff8eb;
+  font-size: 16px;
+}
+.hud-button:focus { fill: #d073ed; }
+.bag-egg-button {
+  fill: linear-gradient(to bottom, #ffe77f, #ffb849);
+  border: 3px solid #6a2479;
+  border-radius: 13px;
+  color: #5c1c68;
+  font-size: 17px;
+}
+.bag-egg-button:disabled { fill: linear-gradient(to bottom, #fff6ae, #ffc747); border: 4px solid #5a1579; }
+.backpack-count { color: #5c1c68; font-size: 16px; }
+.toast {
+  color: #fff5ae;
+  font-size: 21px;
+}
+.toast-panel {
+  fill: #471965ed;
+  border: 2px solid #fff0c5;
+  border-radius: 13px;
+}
+.footer-help { color: #fff7df; font-size: 16px; }
+.feed-button { fill: linear-gradient(to bottom, #fff4bb, #ffc879); border: 3px solid #641879; border-radius: 12px; color: #54166e; font-size: 16px; }
+.feed-button:disabled { fill: #8c6f95; color: #fff1df; }
+.credits-shade { fill: #15001bb0; }
+.credit-heading { color: #fff3b8; font-size: 35px; }
+.credit-line { color: #fff8ed; font-size: 23px; }
+.credit-hint { color: #e9caff; font-size: 18px; }
+.cursor {
+  fill: #fffce9;
+  border: 2px solid #6a237c;
+  border-radius: 8px;
+}
+.hole-core { fill: #030008; }
+
+.modal-scrim { fill: #160725d9; }
+.modal-card {
+  fill: linear-gradient(to bottom, #fff7d0, #e7d2f1);
+  border: 4px solid #6b1d80;
+  border-radius: 27px;
+}
+.modal-heading { color: #531568; font-size: 35px; }
+.modal-button {
+  fill: linear-gradient(to bottom, #bc5bdc, #822ca5);
+  border: 3px solid #fff4db;
+  border-radius: 17px;
+  color: #fff8e7;
+  font-size: 19px;
+}
+.modal-button:disabled {
+  fill: linear-gradient(to bottom, #fff09d, #ffbf54);
+  border: 3px solid #692177;
+  color: #5c176e;
+}
+.modal-button:pressed { fill: #69268c; }
+.desk-modal-button { font-size: 22px; }
+.desk-modal-button:disabled {
+  fill: linear-gradient(to bottom, #fff09d, #ffbf54);
+  border: 3px solid #692177;
+  color: #5c176e;
+}
+.modal-hint { color: #5c286e; font-size: 17px; }
+.market-card {
+  fill: linear-gradient(to bottom, #fff9d8, #f5d2f5 54%, #cae8ff);
+  border: 5px solid #68217c;
+  border-radius: 26px;
+}
+.market-balance { color: #69235f; font-size: 19px; }
+.market-tab {
+  fill: linear-gradient(to bottom, #c976e9, #8c37b4);
+  border: 3px solid #fff4d6;
+  border-radius: 14px;
+  color: #fff9e8;
+  font-size: 23px;
+}
+.market-tab:disabled { fill: linear-gradient(to bottom, #ffe976, #ffbd51); color: #622071; border: 3px solid #692177; }
+.market-option {
+  fill: linear-gradient(to bottom, #fff8e5, #ffe2aa);
+  border: 3px solid #8d4aa2;
+  border-radius: 16px;
+  color: #5b226a;
+  font-size: 18px;
+}
+.market-option:disabled { fill: linear-gradient(to bottom, #ffeca0, #ffc865); border: 4px solid #67227c; }
+.market-info-panel {
+  fill: linear-gradient(to bottom, #e6f8ff, #ffedb7);
+  border: 3px solid #8d4aa2;
+  border-radius: 16px;
+}
+.market-info { color: #5b226a; font-size: 18px; }
+.market-status { color: #62236e; font-size: 17px; }
+.market-hint { color: #652773; font-size: 14px; }
+.market-fry-track { fill: #5c2d68; border-radius: 4px; }
+.market-fry-fill { fill: linear-gradient(90deg, #fff277, #ff9d35); border-radius: 4px; }
+.market-close { fill: #8e3aae; border: 2px solid #fff4db; border-radius: 10px; color: #fff8e7; font-size: 21px; }
+.picker-tab { font-size: 20px; }
+.picker-tile {
+  fill: linear-gradient(to bottom, #fff9e8, #ffe4b9);
+  border: 3px solid #8d4aa2;
+  border-radius: 16px;
+}
+.picker-tile:disabled { fill: linear-gradient(to bottom, #fff0ad, #ffc976); border: 4px solid #67227c; }
+.picker-label { color: #58216b; font-size: 16px; }
+.picker-empty { color: #6d4378; font-size: 23px; }
+.quest-book {
+  fill: linear-gradient(to bottom, #fff8d5, #f2e0ad);
+  border: 4px solid #68237b;
+  border-radius: 22px;
+}
+.quest-tile {
+  fill: #fff2d0;
+  border: 3px solid #a365a5;
+  border-radius: 14px;
+  color: #643675;
+  font-size: 22px;
+}
+.quest-tile:disabled { fill: #f4d2ff; border: 3px solid #6c247a; }
+.quest-detail-panel {
+  fill: #fff7df;
+  border: 2px solid #a365a5;
+  border-radius: 12px;
+}
+.quest-detail { color: #542067; font-size: 19px; }
+.quest-page { color: #622276; font-size: 18px; }
+.page-button {
+  fill: #aa4bcc;
+  border: 2px solid #fff5d8;
+  border-radius: 10px;
+  color: #fff8eb;
+  font-size: 23px;
+}
+.page-button:disabled { fill: #c9aacb; color: #5f3769; }
+.scared-egg-mark { color: #521364; font-size: 46px; }
+
+.glow { blend-mode: normal; }
+.alert-mark { color: #fff4d8; font-size: 58px; }
+.health-track { fill: #3b174c; border-radius: 6px; }
+.boss-health { fill: linear-gradient(90deg, #9f1ce3, #ee5eff); border-radius: 6px; }
+.final-player-health { fill: #ffcc64; border-radius: 4px; }
+.player-hp { color: #ffebba; font-size: 18px; }
+.boss-message { color: #fff2dc; font-size: 20px; }

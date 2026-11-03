@@ -1,0 +1,2050 @@
+// GamePad mod workshop. Paint is stored as editable pixels rather than a
+// runtime image, so the Wii U renderer never has to decode user PNGs in play.
+const MOD_W=42;
+const MOD_H=42;
+const MOD_SIZE=MOD_W*MOD_H;
+const MOD_SLOTS=6;
+const MOD_BOSS_TYPES=3;
+const MOD_BIOME_TYPES=3;
+const MOD_ELEMENT_TYPES=6;
+const MOD_PALETTE=[
+  "#1b1028","#5b1a86","#a333d8","#e47bff",
+  "#171d57","#3265c9","#45b6f4","#9fe9ff",
+  "#134d51","#259c83","#7bd366","#d9ed90",
+  "#5d2a25","#b74742","#f27d55","#ffd188",
+  "#8b4a16","#dfa634","#fff0a1","#fffbe5",
+  "#25252e","#646473","#b5afbf","#ffffff"
+];
+const MOD_TOOLS=["PEN","ERASE","FILL","GRAD","LINE","RECT","OVAL",
+  "STAMP","PICK","SELECT","MOVE","TEXT","AIR","MIRROR","LIGHT","DARK"];
+const MOD_KEYS="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const MOD_OBJECTS=["PAN","MOUTH","BUMPER","BUTTON","MAP","MAGNET",
+  "STICKY","FAN","BOOK","BRICK","PENCIL","PORTAL",
+  "CUSTOM 1","CUSTOM 2","CUSTOM 3","BLACK HOLE",
+  "CUSTOM 4","CUSTOM 5","CUSTOM 6"];
+const MOD_MOVES=["TELEPORT","SLAM","MEND","DROP","SHOCKWAVE","AVOID SLAM",
+  "STRIP","EGG RAIN","BODY DROP","BODY WAVES","BODY AVOID","BODY STRIP"];
+const MOD_DIFFICULTIES=["MATCH SAVE","EASY","MEDIUM","HARD","EXTRA HARD"];
+const MOD_MUSIC_NAMES=["UNDEF THEME","HANDS THEME","WAVES THEME","SILENT",
+  "SD TRACK 1","SD TRACK 2","SD TRACK 3"];
+const MOD_MUSIC_PATHS=["audio/final-boss.ogg","audio/hard-phase.wav",
+  "audio/hard-waves.wav","","useraudio:an-egg-track-1.ogg",
+  "useraudio:an-egg-track-2.ogg","useraudio:an-egg-track-3.ogg"];
+const MOD_BEHAVIORS=["BUMPER","PAN","MOUTH","FAN","MAGNET","STICKY",
+  "BRICK","PENCIL","BUTTON","PORTAL"];
+const MOD_TARGETS=["bossArt","bossHitbox","elementArt","elementHitbox",
+  "moveArt","moveHitbox"];
+const MOD_BASE_TARGETS=["bossArt","bossHitbox","elementArt","elementHitbox"];
+let modData=null;
+let studioModSlot=0;
+let modSlotNames=["","","","","",""];
+let studioScreen="home";
+let studioConfigKind="boss";
+let studioPickerKind="objects";
+let studioPickerReturn="home";
+let studioDeleteIndex=0;
+let studioTarget="bossArt";
+let studioSelectedMove=0;
+let studioSelectedElement=0;
+let studioSelectedBoss=0;
+let studioSelectedBiome=0;
+let studioNameTarget="mod";
+let studioObjectPage=0;
+let studioTool=0;
+let studioPrimary="#a333d8";
+let studioSecondaryColor="#9fe9ff";
+let studioChooseSecondary=false;
+let studioColorTarget="boss";
+let studioColorReturn="config";
+let studioColorValue="#a333d8";
+let studioBrushSize=1;
+let studioFilled=false;
+let studioGradientDirection=0;
+let studioLockTransparency=false;
+let studioLayered=false;
+let studioPointerX=320;
+let studioPointerY=240;
+let studioPaintDown=false;
+let studioStartX=0;
+let studioStartY=0;
+let studioLastX=0;
+let studioLastY=0;
+let studioStrokeRegion=1;
+let studioUndoStack=[];
+let studioRedoStack=[];
+let studioSelection=null;
+let studioToolNodes=[];
+let studioKeyNodes=[];
+let studioPickNodes=[];
+let studioCollectionNodes=[];
+let studioMessage="";
+let studioMessageClock=0;
+let studioMusicPreview=0;
+let modBossHasArt=false;
+let modMoveHasArt=false;
+let modHasElementHitbox=[false,false,false,false,false,false];
+let modHasBossHitbox=[false,false,false];
+let modRenderX=NaN;
+let modRenderY=NaN;
+let modDeskBaseGradient=-1;
+let modDeskOverlayGradient=-1;
+let modFightGradient=-1;
+function modIndexOf(value,part,start) {
+  for(let i=start || 0;i<=value.length-part.length;i++)
+    if(value.slice(i,i+part.length)===part) return i;
+  return -1;
+}
+
+function modSetSplit(nodes,sprites) {
+  for(let i=0;i<nodes.length;i++)
+    setSprites(nodes[i],sprites.slice(i*255,(i+1)*255));
+}
+function modSetVisible(nodes,value) {
+  for(const node of nodes) node.visible=value;
+}
+function studioPixelBatches() {
+  return [studioPixels,studioPixelsB,studioPixelsC,studioPixelsD,
+    studioPixelsE,studioPixelsF,studioPixelsG];
+}
+function deskModPixelBatches() {
+  return [deskModPixels,deskModPixelsB,deskModPixelsC,deskModPixelsD,
+    deskModPixelsE,deskModPixelsF,deskModPixelsG,deskModPixelsH];
+}
+function bossModPixelBatches() {
+  return [modBossPixels,modBossPixelsB,modBossPixelsC,modBossPixelsD,
+    modBossPixelsE,modBossPixelsF,modBossPixelsG];
+}
+function moveModPixelBatches() {
+  return [modMovePixels,modMovePixelsB,modMovePixelsC,modMovePixelsD,
+    modMovePixelsE,modMovePixelsF,modMovePixelsG];
+}
+
+function modRebuildMaskFlags() {
+  modHasElementHitbox=[false,false,false,false,false,false];
+  modHasBossHitbox=[false,false,false];
+  if(!modData) return;
+  for(let i=0;i<MOD_ELEMENT_TYPES;i++) {
+    const key=i===0?"elementHitbox":"elementHitbox"+String(i);
+    const mask=modData.art[key];
+    if(mask) for(const color of mask.colors) if(color!=="") {modHasElementHitbox[i]=true;break;}
+  }
+  for(let i=0;i<modData.bossCount;i++) {
+    const mask=modData.art[modBossArtKey(i,"bossHitbox")];
+    if(mask) for(const color of mask.colors)
+      if(color!=="") {modHasBossHitbox[i]=true;break;}
+  }
+}
+
+function newModCanvas() {
+  const colors=[];const regions=[];
+  for(let i=0;i<MOD_SIZE;i++) {colors.push("");regions.push(0);}
+  return {colors:colors,regions:regions,nextRegion:1};
+}
+const MOD_EMPTY_CANVAS=newModCanvas();
+function newBossProfile(index) {
+  return {name:"BOSS "+String(index+1),bossMode:"default",
+    bossColor:index===1?"#259c83":"#f27d55",
+    bossMoves:[true,true,true,true,true,true,true,true,false,false,false,false],
+    difficulty:0,music:[0,1,2],phaseEnabled:[true,true,true]};
+}
+function newBiomeProfile(index) {
+  const objects=[];for(let i=0;i<MOD_OBJECTS.length;i++) objects.push(false);
+  if(index===1) {objects[2]=true;objects[11]=true;objects[13]=true;}
+  else {objects[0]=true;objects[1]=true;objects[14]=true;}
+  return {name:"BIOME "+String(index+1),
+    gradientTop:index===1?"#3265c9":"#e47b55",
+    gradientBottom:index===1?"#259c83":"#ffd188",
+    gradientDirection:0,objects:objects};
+}
+function newElementProfile(index) {
+  return {name:"ELEMENT "+String(index+1),behavior:index===0?0:index===1?1:
+    index===2?2:index===3?3:index===4?9:5,boss:index===0?0:-1};
+}
+function newMod() {
+  const art={};for(const target of MOD_BASE_TARGETS) art[target]=newModCanvas();
+  return {name:"NEW MOD",enabled:false,bossCount:1,biomeCount:1,elementCount:3,
+    bossName:"",bosses:[newBossProfile(1),newBossProfile(2)],
+    biomes:[newBiomeProfile(1),newBiomeProfile(2)],
+    bossMode:"default",bossColor:MOD_PALETTE[2],
+    difficulty:0,music:[0,1,2],phaseEnabled:[true,true,true],
+    bossMoves:[true,true,true,true,true,true,true,true,false,false,false,false],
+    elements:[newElementProfile(0),newElementProfile(1),newElementProfile(2),
+      newElementProfile(3),newElementProfile(4),newElementProfile(5)],
+    biomeName:"BIOME 1",gradientTop:MOD_PALETTE[2],gradientBottom:MOD_PALETTE[6],
+    gradientDirection:0,objects:[true,true,false,false,false,false,false,
+      false,false,false,false,false,true,false,false,false,false,false,false],art:art};
+}
+function modBossProfile(index) {
+  return index===0?modData:modData.bosses[index-1];
+}
+function modBiomeProfile(index) {
+  return index===0?modData:modData.biomes[index-1];
+}
+function modBossName(index) {
+  if(index===0) return modData.bossName || modData.name;
+  return modData.bosses[index-1].name;
+}
+function modBiomeName(index) {
+  return index===0?modData.biomeName:modData.biomes[index-1].name;
+}
+function modElementName(index) {return modData.elements[index].name;}
+function studioNameRead() {
+  if(studioNameTarget==="boss") return studioSelectedBoss===0?
+    modData.bossName:modData.bosses[studioSelectedBoss-1].name;
+  if(studioNameTarget==="biome") return modBiomeName(studioSelectedBiome);
+  if(studioNameTarget==="element") return modElementName(studioSelectedElement);
+  return modData.name;
+}
+function studioNameWrite(value) {
+  value=modNameSafe(value);
+  if(studioNameTarget==="boss") {
+    if(studioSelectedBoss===0) modData.bossName=value;
+    else modData.bosses[studioSelectedBoss-1].name=value;
+  } else if(studioNameTarget==="biome") {
+    if(studioSelectedBiome===0) modData.biomeName=value;
+    else modData.biomes[studioSelectedBiome-1].name=value;
+  } else if(studioNameTarget==="element")
+    modData.elements[studioSelectedElement].name=value;
+  else modData.name=value;
+}
+function studioOpenName(target) {
+  studioNameTarget=target;
+  if(target==="boss" && studioSelectedBoss===0 && !modData.bossName)
+    modData.bossName=modData.name;
+  studioShow("name");
+  if(Keyboard.native) Keyboard.open(studioNameRead(),20);
+}
+function studioFinishName() {
+  const fallback=studioNameTarget==="boss"?"BOSS "+String(studioSelectedBoss+1):
+    studioNameTarget==="biome"?"BIOME "+String(studioSelectedBiome+1):
+    studioNameTarget==="element"?"ELEMENT "+String(studioSelectedElement+1):"NEW MOD";
+  studioNameWrite(modNameSafe(studioNameRead()).trim() || fallback);
+  studioShow(studioNameTarget==="mod"?"home":"config");
+}
+function modBossArtKey(index,key) {
+  return index===0?key:key+"B"+String(index);
+}
+function modBiomeIndex(name) {
+  if(name==="mod") return 0;
+  for(let i=0;i<MOD_BIOME_TYPES;i++) if(name==="mod"+String(i)) return i;
+  return -1;
+}
+function modPaintKey() {
+  if(studioTarget==="moveArt" || studioTarget==="moveHitbox")
+    return modBossArtKey(studioSelectedBoss,studioTarget+String(studioSelectedMove));
+  if((studioTarget==="elementArt" || studioTarget==="elementHitbox") && studioSelectedElement>0)
+    return studioTarget+String(studioSelectedElement);
+  if(studioTarget==="bossArt" || studioTarget==="bossHitbox")
+    return modBossArtKey(studioSelectedBoss,studioTarget);
+  return studioTarget;
+}
+function modCloneCanvas(canvas) {
+  if(!canvas) return null;
+  return {colors:canvas.colors.slice(0),regions:canvas.regions.slice(0),
+    nextRegion:canvas.nextRegion};
+}
+function modBossSnapshot(index) {
+  const boss=modBossProfile(index);
+  return {name:modBossName(index),bossMode:boss.bossMode,
+    bossColor:boss.bossColor,bossMoves:boss.bossMoves.slice(0),
+    difficulty:boss.difficulty,music:boss.music.slice(0),
+    phaseEnabled:boss.phaseEnabled.slice(0)};
+}
+function modWriteBoss(index,boss) {
+  if(index===0) {
+    modData.bossName=boss.name;modData.bossMode=boss.bossMode;
+    modData.bossColor=boss.bossColor;modData.bossMoves=boss.bossMoves.slice(0);
+    modData.difficulty=boss.difficulty;modData.music=boss.music.slice(0);
+    modData.phaseEnabled=boss.phaseEnabled.slice(0);
+  } else modData.bosses[index-1]=boss;
+}
+function modBiomeSnapshot(index) {
+  const biome=modBiomeProfile(index);
+  return {name:modBiomeName(index),gradientTop:biome.gradientTop,
+    gradientBottom:biome.gradientBottom,
+    gradientDirection:biome.gradientDirection,objects:biome.objects.slice(0)};
+}
+function modWriteBiome(index,biome) {
+  if(index===0) {
+    modData.biomeName=biome.name;modData.gradientTop=biome.gradientTop;
+    modData.gradientBottom=biome.gradientBottom;
+    modData.gradientDirection=biome.gradientDirection;
+    modData.objects=biome.objects.slice(0);
+  } else modData.biomes[index-1]=biome;
+}
+function modElementArtKey(index,kind) {
+  return index===0?kind:kind+String(index);
+}
+function modCopyBossArt(from,to) {
+  for(const kind of ["bossArt","bossHitbox"]) {
+    const source=modData.art[modBossArtKey(from,kind)];
+    modData.art[modBossArtKey(to,kind)]=modCloneCanvas(source) ||
+      (to===0?newModCanvas():null);
+  }
+  for(let i=0;i<MOD_MOVES.length;i++) for(const kind of ["moveArt","moveHitbox"]) {
+    const source=modData.art[modBossArtKey(from,kind+String(i))];
+    modData.art[modBossArtKey(to,kind+String(i))]=modCloneCanvas(source);
+  }
+}
+function modClearBossArt(index) {
+  for(const kind of ["bossArt","bossHitbox"])
+    modData.art[modBossArtKey(index,kind)]=null;
+  for(let i=0;i<MOD_MOVES.length;i++) for(const kind of ["moveArt","moveHitbox"])
+    modData.art[modBossArtKey(index,kind+String(i))]=null;
+}
+function modCopyElementArt(from,to) {
+  for(const kind of ["elementArt","elementHitbox"])
+    modData.art[modElementArtKey(to,kind)]=
+      modCloneCanvas(modData.art[modElementArtKey(from,kind)]) ||
+      (to===0?newModCanvas():null);
+}
+function modClearElementArt(index) {
+  for(const kind of ["elementArt","elementHitbox"])
+    modData.art[modElementArtKey(index,kind)]=null;
+}
+function modCustomObjectIndex(index) {return index<3?12+index:13+index;}
+function studioEntityCount(kind) {
+  return kind==="boss"?modData.bossCount:kind==="biome"?
+    modData.biomeCount:modData.elementCount;
+}
+function studioEntityMax(kind) {
+  return kind==="boss"?MOD_BOSS_TYPES:kind==="biome"?
+    MOD_BIOME_TYPES:MOD_ELEMENT_TYPES;
+}
+function studioSelectedIndex(kind) {
+  return kind==="boss"?studioSelectedBoss:kind==="biome"?
+    studioSelectedBiome:studioSelectedElement;
+}
+function studioSelectIndex(kind,index) {
+  if(kind==="boss") {studioSelectedBoss=index;studioSelectedMove=0;}
+  else if(kind==="biome") {studioSelectedBiome=index;modRefreshGradient();}
+  else studioSelectedElement=index;
+}
+function studioAddEntity(kind,copyFrom) {
+  const index=studioEntityCount(kind);
+  if(index>=studioEntityMax(kind)) return false;
+  if(kind==="boss") {
+    const profile=copyFrom>=0?modBossSnapshot(copyFrom):newBossProfile(index);
+    if(copyFrom>=0) profile.name=modNameSafe("COPY "+profile.name).trim();
+    modWriteBoss(index,profile);
+    if(copyFrom>=0) modCopyBossArt(copyFrom,index);else modClearBossArt(index);
+    modData.bossCount++;
+  } else if(kind==="biome") {
+    const profile=copyFrom>=0?modBiomeSnapshot(copyFrom):newBiomeProfile(index);
+    if(copyFrom>=0) profile.name=modNameSafe("COPY "+profile.name).trim();
+    modWriteBiome(index,profile);modData.biomeCount++;
+  } else {
+    const source=copyFrom>=0?modData.elements[copyFrom]:newElementProfile(index);
+    const profile={name:copyFrom>=0?modNameSafe("COPY "+source.name).trim():source.name,
+      behavior:source.behavior,boss:source.boss};
+    modData.elements[index]=profile;
+    if(copyFrom>=0) modCopyElementArt(copyFrom,index);else modClearElementArt(index);
+    modData.elementCount++;
+  }
+  studioSelectIndex(kind,index);modRebuildMaskFlags();modRefreshGradient();
+  return true;
+}
+function studioDeleteEntity(kind,index) {
+  const count=studioEntityCount(kind);
+  if(count<=1 || index<0 || index>=count) return false;
+  if(kind==="boss") {
+    for(let i=index;i<count-1;i++) {
+      modWriteBoss(i,modBossSnapshot(i+1));modCopyBossArt(i+1,i);
+    }
+    modData.bosses[count-2]=newBossProfile(count-1);
+    modClearBossArt(count-1);modData.bossCount--;
+    for(let i=0;i<modData.elementCount;i++) {
+      const bound=modData.elements[i].boss;
+      if(bound===index) modData.elements[i].boss=-1;
+      else if(bound>index) modData.elements[i].boss=bound-1;
+    }
+  } else if(kind==="biome") {
+    for(let i=index;i<count-1;i++) modWriteBiome(i,modBiomeSnapshot(i+1));
+    modData.biomes[count-2]=newBiomeProfile(count-1);modData.biomeCount--;
+  } else {
+    for(let i=index;i<count-1;i++) {
+      const source=modData.elements[i+1];
+      modData.elements[i]={name:source.name,behavior:source.behavior,boss:source.boss};
+      modCopyElementArt(i+1,i);
+    }
+    modData.elements[count-1]=newElementProfile(count-1);
+    modClearElementArt(count-1);modData.elementCount--;
+    for(let biome=0;biome<modData.biomeCount;biome++) {
+      const objects=modBiomeProfile(biome).objects;
+      for(let i=index;i<count-1;i++)
+        objects[modCustomObjectIndex(i)]=objects[modCustomObjectIndex(i+1)];
+      objects[modCustomObjectIndex(count-1)]=false;
+    }
+  }
+  studioSelectIndex(kind,Math.min(index,studioEntityCount(kind)-1));
+  modRebuildMaskFlags();modRefreshGradient();return true;
+}
+function modCanvas() {
+  const key=modPaintKey();
+  if(!modData.art[key]) modData.art[key]=newModCanvas();
+  return modData.art[key];
+}
+function modIsHitbox() {return studioTarget==="bossHitbox" || studioTarget==="elementHitbox" || studioTarget==="moveHitbox";}
+function modNameSafe(value) {
+  let result="";
+  for(let i=0;i<value.length && result.length<20;i++) {
+    const c=value.slice(i,i+1).toUpperCase();
+    if((c>="A" && c<="Z") || (c>="0" && c<="9") || c===" ") result+=c;
+  }
+  return result;
+}
+function modColor(value,fallback) {
+  value=String(value);
+  if(value.length===7 && value.slice(0,1)==="#") {
+    const digits="0123456789abcdef";
+    for(let i=1;i<7;i++) if(modIndexOf(digits,value.slice(i,i+1).toLowerCase(),0)<0) return fallback;
+    return value.toLowerCase();
+  }
+  if(value.length>0 && value.length<3) {
+    const index=Number(value);
+    if(index===index && index>=0 && index<24) return MOD_PALETTE[index];
+  }
+  return fallback;
+}
+function encodeModCanvas(canvas) {
+  let value="";
+  for(let i=0;i<MOD_SIZE;i++) {
+    const color=canvas.colors[i];
+    let region=String(canvas.regions[i]);
+    while(region.length<4) region="0"+region;
+    value+=(color===""?"______":color.slice(1,7))+region;
+  }
+  return value;
+}
+function decodeModCanvas(data) {
+  if(data.length!==MOD_SIZE*10) return null;
+  const canvas=newModCanvas();let maxRegion=0;
+  for(let i=0;i<MOD_SIZE;i++) {
+    const chunk=data.slice(i*10,i*10+10);
+    canvas.colors[i]=chunk.slice(0,6)==="______"?"":"#"+chunk.slice(0,6);
+    const region=Number(chunk.slice(6,10));
+    if(region!==region || region<0 || region>9999) return null;
+    canvas.regions[i]=region;maxRegion=Math.max(maxRegion,region);
+  }
+  canvas.nextRegion=maxRegion+1;
+  return canvas;
+}
+function modSerialize() {
+  const lines=["ANEGG-MOD-1","format|2",
+    "name|"+(modNameSafe(modData.name).trim() || "NEW MOD"),
+    "enabled|"+(modData.enabled?"1":"0"),
+    "bossCount|"+String(modData.bossCount),
+    "biomeCount|"+String(modData.biomeCount),
+    "elementCount|"+String(modData.elementCount),
+    "bossName|"+modNameSafe(modData.bossName).trim(),
+    "bossMode|"+modData.bossMode,
+    "bossColor|"+String(modData.bossColor),
+    "bossMoves|"+modData.bossMoves.map(v=>v?"1":"0").join(""),
+    "difficulty|"+String(modData.difficulty),
+    "music|"+modData.music.join(","),
+    "phases|"+modData.phaseEnabled.map(v=>v?"1":"0").join(""),
+    "behavior|"+String(modData.elements[0].behavior),
+    "summon|"+(modData.elements[0].boss>=0?"1":"0"),
+    "biomeName|"+modNameSafe(modData.biomeName).trim(),
+    "gradient|"+[modData.gradientTop,modData.gradientBottom,modData.gradientDirection].join(","),
+    "objects|"+modData.objects.map(v=>v?"1":"0").join("")];
+  for(let i=1;i<modData.bossCount;i++) {
+    const boss=modData.bosses[i-1];
+    lines.push("bossProfile|"+String(i)+"|"+modNameSafe(boss.name).trim()+"|"+
+      boss.bossMode+"|"+boss.bossColor+"|"+
+      boss.bossMoves.map(v=>v?"1":"0").join("")+"|"+
+      String(boss.difficulty)+"|"+boss.music.join(",")+"|"+
+      boss.phaseEnabled.map(v=>v?"1":"0").join(""));
+  }
+  for(let i=1;i<modData.biomeCount;i++) {
+    const biome=modData.biomes[i-1];
+    lines.push("biomeProfile|"+String(i)+"|"+biome.gradientTop+"|"+
+      biome.gradientBottom+"|"+String(biome.gradientDirection)+"|"+
+      biome.objects.map(v=>v?"1":"0").join("")+"|"+
+      modNameSafe(biome.name).trim());
+  }
+  for(let i=1;i<modData.elementCount;i++)
+    lines.push("element|"+String(i)+"|"+String(modData.elements[i].behavior)+"|"+
+      (modData.elements[i].boss>=0?"1":"0"));
+  for(let i=0;i<modData.elementCount;i++)
+    lines.push("elementName|"+String(i)+"|"+modNameSafe(modData.elements[i].name).trim());
+  for(let i=0;i<modData.elementCount;i++)
+    lines.push("elementBoss|"+String(i)+"|"+String(modData.elements[i].boss));
+  for(const target of MOD_BASE_TARGETS)
+    lines.push("canvas|"+target+"|"+encodeModCanvas(modData.art[target]));
+  for(let i=1;i<modData.elementCount;i++) for(const kind of ["elementArt","elementHitbox"]) {
+    const key=kind+String(i);
+    if(modData.art[key]) lines.push("canvas|"+key+"|"+encodeModCanvas(modData.art[key]));
+  }
+  for(let boss=0;boss<modData.bossCount;boss++) {
+    if(boss>0) for(const kind of ["bossArt","bossHitbox"]) {
+      const key=modBossArtKey(boss,kind);
+      if(modData.art[key]) lines.push("canvas|"+key+"|"+encodeModCanvas(modData.art[key]));
+    }
+    for(let i=0;i<MOD_MOVES.length;i++) for(const kind of ["moveArt","moveHitbox"]) {
+      const key=modBossArtKey(boss,kind+String(i));
+      if(modData.art[key]) lines.push("canvas|"+key+"|"+encodeModCanvas(modData.art[key]));
+    }
+  }
+  return lines.join("\n");
+}
+function modDeserialize(raw) {
+  if(!raw || !raw.startsWith("ANEGG-MOD-1\n") || raw.length>2000000) return null;
+  const loaded=newMod();let canvasCount=0;let format=1;
+  for(const line of raw.split("\n")) {
+    const parts=line.split("|");
+    if(parts[0]==="format" && parts[1]==="2") format=2;
+    else if(parts[0]==="name") loaded.name=modNameSafe(parts[1] || "").trim() || "NEW MOD";
+    else if(parts[0]==="enabled") loaded.enabled=parts[1]==="1";
+    else if(parts[0]==="bossCount") loaded.bossCount=clamp(Math.floor(Number(parts[1])),1,MOD_BOSS_TYPES);
+    else if(parts[0]==="biomeCount") loaded.biomeCount=clamp(Math.floor(Number(parts[1])),1,MOD_BIOME_TYPES);
+    else if(parts[0]==="elementCount") loaded.elementCount=clamp(Math.floor(Number(parts[1])),1,MOD_ELEMENT_TYPES);
+    else if(parts[0]==="bossName") loaded.bossName=modNameSafe(parts[1] || "").trim();
+    else if(parts[0]==="bossMode") loaded.bossMode=
+      parts[1]==="bossML"?"bossML":parts[1]==="body"?"body":"default";
+    else if(parts[0]==="bossColor") loaded.bossColor=modColor(parts[1],loaded.bossColor);
+    else if(parts[0]==="difficulty") {
+      const value=Number(parts[1]);
+      if(value===Math.floor(value) && value>=0 && value<MOD_DIFFICULTIES.length)
+        loaded.difficulty=value;
+    }
+    else if(parts[0]==="music") {
+      const values=(parts[1] || "").split(",");
+      if(values.length===3) for(let i=0;i<3;i++) {
+        const value=Number(values[i]);
+        if(value===Math.floor(value) && value>=0 && value<MOD_MUSIC_NAMES.length)
+          loaded.music[i]=value;
+      }
+    }
+    else if(parts[0]==="phases" && (parts[1] || "").length===3 &&
+        parts[1].includes("1"))
+      for(let i=0;i<3;i++) loaded.phaseEnabled[i]=parts[1].slice(i,i+1)==="1";
+    else if(parts[0]==="bossMoves" && (parts[1] || "").length>=8 &&
+        parts[1].length<=MOD_MOVES.length)
+      for(let i=0;i<parts[1].length;i++)
+        loaded.bossMoves[i]=parts[1].slice(i,i+1)==="1";
+    else if(parts[0]==="behavior") loaded.elements[0].behavior=clamp(Number(parts[1]),0,MOD_BEHAVIORS.length-1);
+    else if(parts[0]==="summon") loaded.elements[0].boss=parts[1]==="1"?0:-1;
+    else if(parts[0]==="element") {
+      const index=Number(parts[1]);
+      if(index>=1 && index<MOD_ELEMENT_TYPES) {
+        loaded.elements[index].behavior=clamp(Number(parts[2]),0,MOD_BEHAVIORS.length-1);
+        loaded.elements[index].boss=parts[3]==="1"?0:-1;
+      }
+    }
+    else if(parts[0]==="elementBoss") {
+      const index=Number(parts[1]);const boss=Number(parts[2]);
+      if(index>=0 && index<MOD_ELEMENT_TYPES && boss>=-1 && boss<MOD_BOSS_TYPES)
+        loaded.elements[index].boss=boss;
+    }
+    else if(parts[0]==="elementName") {
+      const index=Number(parts[1]);
+      if(index>=0 && index<MOD_ELEMENT_TYPES)
+        loaded.elements[index].name=modNameSafe(parts[2] || "").trim() ||
+          "ELEMENT "+String(index+1);
+    }
+    else if(parts[0]==="bossProfile") {
+      const index=Number(parts[1]);
+      if(index>=1 && index<MOD_BOSS_TYPES) {
+        const boss=loaded.bosses[index-1];
+        boss.name=modNameSafe(parts[2] || "").trim() || boss.name;
+        boss.bossMode=parts[3]==="body"?"body":parts[3]==="bossML"?"bossML":"default";
+        boss.bossColor=modColor(parts[4],boss.bossColor);
+        const moves=parts[5] || "";
+        if(moves.length===MOD_MOVES.length)
+          for(let i=0;i<MOD_MOVES.length;i++) boss.bossMoves[i]=moves.slice(i,i+1)==="1";
+        const difficulty=Number(parts[6]);
+        if(difficulty>=0 && difficulty<MOD_DIFFICULTIES.length) boss.difficulty=difficulty;
+        const music=(parts[7] || "").split(",");
+        if(music.length===3) for(let i=0;i<3;i++) {
+          const choice=Number(music[i]);
+          if(choice>=0 && choice<MOD_MUSIC_NAMES.length) boss.music[i]=choice;
+        }
+        const phases=parts[8] || "";
+        if(phases.length===3 && phases.includes("1"))
+          for(let i=0;i<3;i++) boss.phaseEnabled[i]=phases.slice(i,i+1)==="1";
+      }
+    }
+    else if(parts[0]==="biomeProfile") {
+      const index=Number(parts[1]);
+      if(index>=1 && index<MOD_BIOME_TYPES) {
+        const biome=loaded.biomes[index-1];
+        biome.gradientTop=modColor(parts[2],biome.gradientTop);
+        biome.gradientBottom=modColor(parts[3],biome.gradientBottom);
+        biome.gradientDirection=clamp(Number(parts[4]),0,2);
+        const mask=parts[5] || "";
+        if(mask.length===MOD_OBJECTS.length)
+          for(let i=0;i<mask.length;i++) biome.objects[i]=mask.slice(i,i+1)==="1";
+        biome.name=modNameSafe(parts[6] || "").trim() || biome.name;
+      }
+    }
+    else if(parts[0]==="biomeName")
+      loaded.biomeName=modNameSafe(parts[1] || "").trim() || loaded.biomeName;
+    else if(parts[0]==="gradient") {
+      const values=(parts[1] || "").split(",");
+      loaded.gradientTop=modColor(values[0],loaded.gradientTop);
+      loaded.gradientBottom=modColor(values[1],loaded.gradientBottom);
+      loaded.gradientDirection=clamp(Number(values[2]),0,2);
+    } else if(parts[0]==="objects" && parts[1].length===MOD_OBJECTS.length)
+      for(let i=0;i<MOD_OBJECTS.length;i++) loaded.objects[i]=parts[1].slice(i,i+1)==="1";
+    else if(parts[0]==="objects" && parts[1].length===16)
+      for(let i=0;i<16;i++) loaded.objects[i]=parts[1].slice(i,i+1)==="1";
+    else if(parts[0]==="objects" && parts[1].length===14) {
+      for(let i=0;i<13;i++) loaded.objects[i]=parts[1].slice(i,i+1)==="1";
+      loaded.objects[13]=false;loaded.objects[14]=false;
+      loaded.objects[15]=parts[1].slice(13,14)==="1";
+    }
+    else if(parts[0]==="canvas") {
+      const key=parts[1] || "";
+      let base=false;let allowed=false;
+      for(const target of MOD_BASE_TARGETS) if(key===target) {base=true;allowed=true;}
+      for(let i=1;i<MOD_ELEMENT_TYPES;i++)
+        if(key==="elementArt"+String(i) || key==="elementHitbox"+String(i)) allowed=true;
+      for(let boss=0;boss<MOD_BOSS_TYPES;boss++) {
+        if(boss>0 && (key===modBossArtKey(boss,"bossArt") ||
+            key===modBossArtKey(boss,"bossHitbox"))) allowed=true;
+        for(let i=0;i<MOD_MOVES.length;i++)
+          if(key===modBossArtKey(boss,"moveArt"+String(i)) ||
+              key===modBossArtKey(boss,"moveHitbox"+String(i))) allowed=true;
+      }
+      if(!allowed) return null;
+      const canvas=decodeModCanvas(parts[2] || "");
+      if(!canvas) return null;
+      loaded.art[key]=canvas;if(base) canvasCount++;
+    }
+  }
+  if(canvasCount!==MOD_BASE_TARGETS.length) return null;
+  // Older editor builds allowed BODY moves to be picked while saving DEFAULT.
+  // That combination has no phase-I attack unless it is treated as BODY mode.
+  if(loaded.bossMode==="default") {
+    let normalMove=false;let bodyMove=false;
+    for(let i=0;i<8;i++) if(loaded.bossMoves[i]) normalMove=true;
+    for(let i=8;i<MOD_MOVES.length;i++) if(loaded.bossMoves[i]) bodyMove=true;
+    if(bodyMove && !normalMove) loaded.bossMode="body";
+  }
+  if(format<2) {
+    if(loaded.bossMode==="body") loaded.bossMoves[0]=true;
+    for(let i=1;i<loaded.bossCount;i++)
+      if(loaded.bosses[i-1].bossMode==="body") loaded.bosses[i-1].bossMoves[0]=true;
+  }
+  return loaded;
+}
+function modSave() {
+  modData.enabled=true;
+  const okay=Storage.write(modFilename(studioModSlot),modSerialize());
+  if(okay) modSlotNames[studioModSlot]=modNameSafe(modData.name).trim() || "NEW MOD";
+  studioNotice(okay?"MOD "+String(studioModSlot+1)+" SAVED":"MOD SAVE FAILED");
+  return okay;
+}
+function modFilename(index) {return "an-egg-mod-"+String(index+1)+".txt";}
+function modMusicPath(phase) {
+  if(!modData || !modData.enabled) return MOD_MUSIC_PATHS[phase-1];
+  const profile=fight && fight.mod?modBossProfile(fight.bossIndex):modData;
+  const choice=profile.music[phase-1];
+  const path=MOD_MUSIC_PATHS[choice];
+  if(choice>=4 && !Storage.exists("an-egg-track-"+String(choice-3)+".ogg"))
+    return MOD_MUSIC_PATHS[phase-1];
+  return path;
+}
+function modPlayMusic(phase) {
+  const path=modMusicPath(phase);
+  playMusic(path);
+  if(path && !music && path!==MOD_MUSIC_PATHS[phase-1])
+    playMusic(MOD_MUSIC_PATHS[phase-1]);
+}
+function modFightHealth(difficulty,phase) {
+  if(phase===1) return difficulty==="easy"?50:difficulty==="medium"?120:
+    difficulty==="hard"?200:300;
+  return difficulty==="easy"?50:difficulty==="medium"?75:
+    difficulty==="hard"?100:150;
+}
+function modFightPace(difficulty) {
+  return difficulty==="easy"?1.3:difficulty==="medium"?1.12:
+    difficulty==="extra"?0.83:1;
+}
+function modScanSlots() {
+  for(let i=0;i<MOD_SLOTS;i++) {
+    const raw=Storage.read(modFilename(i),"");
+    modSlotNames[i]="";
+    if(!raw.startsWith("ANEGG-MOD-1\n")) continue;
+    const begin=modIndexOf(raw,"\nname|",0);
+    if(begin<0) continue;
+    const end=modIndexOf(raw,"\n",begin+6);
+    modSlotNames[i]=modNameSafe(raw.slice(begin+6,end<0?begin+26:end)).trim();
+  }
+}
+function modReadSlot(index) {
+  if(index<0 || index>=MOD_SLOTS) return null;
+  return modDeserialize(Storage.read(modFilename(index),""));
+}
+function modLoadSaved() {
+  const loaded=modReadSlot(studioModSlot);
+  modData=loaded || newMod();
+  if(!loaded) modData.name="NEW MOD "+String(studioModSlot+1);
+  modData.enabled=true;
+  modRebuildMaskFlags();
+  modRefreshGradient();
+}
+function modImport() {
+  const raw=Storage.read("an-egg-mod-import.txt","");
+  const loaded=modDeserialize(raw);
+  if(!loaded) {studioNotice("NO VALID MOD IMPORT ON SD");return false;}
+  modData=loaded;studioSelectedBoss=0;studioSelectedBiome=0;
+  studioSelectedElement=0;studioSelectedMove=0;studioObjectPage=0;
+  modRebuildMaskFlags();modRefreshGradient();studioNotice("MOD IMPORTED FROM SD");
+  studioUpdateHome();return true;
+}
+function studioNotice(message) {studioMessage=message;studioMessageClock=3;studioStatus.text=message;}
+function modHex(value) {
+  const digits="0123456789abcdef";
+  value=clamp(Math.floor(value),0,255);
+  return digits.slice(Math.floor(value/16),Math.floor(value/16)+1)+
+    digits.slice(value%16,value%16+1);
+}
+function modColorMix(a,b,t) {
+  return modColorMixRGB(modColorRGB(a),modColorRGB(b),t);
+}
+function modColorMixRGB(from,to,t) {
+  return "#"+modHex(from[0]+(to[0]-from[0])*t)+
+    modHex(from[1]+(to[1]-from[1])*t)+modHex(from[2]+(to[2]-from[2])*t);
+}
+function modColorRGB(value) {
+  const hex=modColor(value,MOD_PALETTE[2]);
+  const digits="0123456789abcdef";const rgb=[];
+  for(let i=1;i<6;i+=2)
+    rgb.push(modIndexOf(digits,hex.slice(i,i+1),0)*16+
+      modIndexOf(digits,hex.slice(i+1,i+2),0));
+  return rgb;
+}
+function modBlendHex(a,b,t) {
+  if(a==="" || b==="") return b;
+  const digits="0123456789abcdef";let result="#";
+  for(let offset=1;offset<=5;offset+=2) {
+    const av=modIndexOf(digits,a.slice(offset,offset+1).toLowerCase(),0)*16+
+      modIndexOf(digits,a.slice(offset+1,offset+2).toLowerCase(),0);
+    const bv=modIndexOf(digits,b.slice(offset,offset+1).toLowerCase(),0)*16+
+      modIndexOf(digits,b.slice(offset+1,offset+2).toLowerCase(),0);
+    result+=modHex(av+(bv-av)*t);
+  }
+  return result;
+}
+function modGradientBands(index) {
+  const biome=modBiomeProfile(index);
+  const bands=[];
+  const from=modColorRGB(biome.gradientTop);
+  const to=modColorRGB(biome.gradientBottom);
+  if(biome.gradientDirection<2) for(let i=0;i<24;i++) {
+    const t=(i+0.5)/24;
+    bands.push({x:biome.gradientDirection===0?0:i*640/24,
+      y:biome.gradientDirection===0?i*20:0,
+      width:biome.gradientDirection===0?640:640/24+1,
+      height:biome.gradientDirection===0?20:480,
+      tint:modColorMixRGB(from,to,t)+"ff"});
+  } else for(let row=0;row<18;row++) for(let col=0;col<24;col++) {
+    const dx=(col+0.5)/24-0.5;const dy=(row+0.5)/18-0.5;
+    const t=clamp(Math.sqrt(dx*dx+dy*dy)/0.71,0,1);
+    bands.push({x:col*640/24,y:row*480/18,width:640/24+1,
+      height:480/18+1,tint:modColorMixRGB(from,to,t)+"ff"});
+  }
+  return bands;
+}
+function modSetDeskGradients(previous,current) {
+  if(previous>=0 && modDeskBaseGradient!==previous) {
+    modSetSplit([deskModSky,deskModSkyB],modGradientBands(previous));
+    modDeskBaseGradient=previous;
+  }
+  if(current>=0 && modDeskOverlayGradient!==current) {
+    modSetSplit([deskModSkyC,deskModSkyD],modGradientBands(current));
+    modDeskOverlayGradient=current;
+  }
+}
+function modSetFightGradient(index) {
+  if(index>=0 && modFightGradient!==index) {
+    modSetSplit([fightModSky,fightModSkyB],modGradientBands(index));
+    modFightGradient=index;
+  }
+}
+function modRefreshGradient() {
+  modDeskBaseGradient=-1;modDeskOverlayGradient=-1;modFightGradient=-1;
+  if(!modData) return;
+  const index=Math.min(studioSelectedBiome,modData.biomeCount-1);
+  modSetDeskGradients(index,index);modSetFightGradient(index);
+}
+function modRenderPaint() {
+  const canvas=modCanvas();const sprites=[];
+  for(let y=0;y<MOD_H;y++) for(let x=0;x<MOD_W;x++) {
+    const color=canvas.colors[y*MOD_W+x];
+    if(color!=="") sprites.push({x:138+x*8,y:70+y*8,width:8,height:8,tint:color+"ff"});
+  }
+  modSetSplit(studioPixelBatches(),sprites);
+}
+function modRenderPalette() {
+  const sprites=[];
+  for(let i=0;i<MOD_PALETTE.length;i++)
+    sprites.push({x:536+(i%4)*23,y:76+Math.floor(i/4)*23,width:20,height:20,
+      tint:MOD_PALETTE[i]+"ff"});
+  setSprites(studioPalette,sprites);
+  const choice=studioChooseSecondary?studioSecondaryColor:studioPrimary;
+  let selected=-1;
+  for(let i=0;i<MOD_PALETTE.length;i++) if(MOD_PALETTE[i]===choice) selected=i;
+  studioPalettePick.visible=selected>=0;
+  if(selected>=0) {
+    studioPalettePick.x=534+(selected%4)*23;
+    studioPalettePick.y=74+Math.floor(selected/4)*23;
+  }
+  studioSecondary.text=studioChooseSecondary?"ALT COLOR *":"ALT COLOR";
+  studioCustomColor.tint=choice+"ff";
+}
+function modPaintIndex(x,y) {return y*MOD_W+x;}
+function modPaintColor() {return modIsHitbox()?"#ffffff":studioPrimary;}
+function studioColorRead() {
+  if(studioColorTarget==="boss") return modBossProfile(studioSelectedBoss).bossColor;
+  if(studioColorTarget==="top") return modBiomeProfile(studioSelectedBiome).gradientTop;
+  if(studioColorTarget==="bottom") return modBiomeProfile(studioSelectedBiome).gradientBottom;
+  return studioColorTarget==="secondary"?studioSecondaryColor:studioPrimary;
+}
+function studioColorWrite(value) {
+  value=modColor(value,studioColorValue);
+  studioColorValue=value;
+  if(studioColorTarget==="boss") modBossProfile(studioSelectedBoss).bossColor=value;
+  else if(studioColorTarget==="top") modBiomeProfile(studioSelectedBiome).gradientTop=value;
+  else if(studioColorTarget==="bottom") modBiomeProfile(studioSelectedBiome).gradientBottom=value;
+  else if(studioColorTarget==="secondary") studioSecondaryColor=value;
+  else studioPrimary=value;
+  if(studioColorTarget==="top" || studioColorTarget==="bottom") modRefreshGradient();
+  studioColorPickerPreview.tint=value+"ff";
+  studioColorHex.text=value.toUpperCase();
+  let selected=-1;
+  for(let i=0;i<MOD_PALETTE.length;i++) if(MOD_PALETTE[i]===value) selected=i;
+  studioColorPresetPick.visible=selected>=0;
+  if(selected>=0) {
+    studioColorPresetPick.x=27+(selected%8)*73;
+    studioColorPresetPick.y=89+Math.floor(selected/8)*29;
+  }
+  const rgb=modColorRGB(value);
+  const labels=[studioColorRed,studioColorGreen,studioColorBlue];
+  const markers=[studioColorRedMark,studioColorGreenMark,studioColorBlueMark];
+  const sprites=[];
+  for(let channel=0;channel<3;channel++) {
+    labels[channel].text=["RED ","GREEN ","BLUE "][channel]+String(rgb[channel]);
+    markers[channel].x=152+rgb[channel];
+    for(let step=0;step<32;step++) {
+      const parts=rgb.slice(0);parts[channel]=step*8;
+      sprites.push({x:153+step*8,y:209+channel*57,width:8,height:20,
+        tint:"#"+modHex(parts[0])+modHex(parts[1])+modHex(parts[2])+"ff"});
+    }
+  }
+  setSprites(studioColorBars,sprites);
+}
+function studioOpenColor(target,returnScreen) {
+  studioColorTarget=target;studioColorReturn=returnScreen;
+  studioColorTitle.text=target==="boss"?"BOSS COLOR":
+    target==="top"?"BIOME TOP":target==="bottom"?"BIOME BOTTOM":
+    target==="secondary"?"ALT PAINT COLOR":"PAINT COLOR";
+  const sprites=[];
+  for(let i=0;i<MOD_PALETTE.length;i++) sprites.push({
+    x:29+(i%8)*73,y:91+Math.floor(i/8)*29,width:61,height:24,
+    tint:MOD_PALETTE[i]+"ff"});
+  setSprites(studioColorPresets,sprites);
+  studioShow("color");studioColorWrite(studioColorRead());
+}
+function studioColorPress(x,y) {
+  if(inside(x,y,185,418,270,42)) {studioShow(studioColorReturn);return;}
+  if(y>=91 && y<179) {
+    const col=Math.floor((x-29)/73);const row=Math.floor((y-91)/29);
+    if(col>=0 && col<8 && row>=0 && row<3 && x<29+col*73+61 && y<91+row*29+24)
+      studioColorWrite(MOD_PALETTE[row*8+col]);
+    return;
+  }
+  for(let channel=0;channel<3;channel++) {
+    const top=209+channel*57;
+    if(y<top-7 || y>top+28) continue;
+    const rgb=modColorRGB(studioColorValue);
+    if(x>=153 && x<=408) rgb[channel]=clamp(Math.round(x-153),0,255);
+    else if(x>=424 && x<467) rgb[channel]=clamp(rgb[channel]-1,0,255);
+    else if(x>=475 && x<518) rgb[channel]=clamp(rgb[channel]+1,0,255);
+    else return;
+    studioColorWrite("#"+modHex(rgb[0])+modHex(rgb[1])+modHex(rgb[2]));
+    return;
+  }
+}
+function modPaintSet(x,y,color,region) {
+  if(x<0 || y<0 || x>=MOD_W || y>=MOD_H) return;
+  const canvas=modCanvas();const index=modPaintIndex(x,y);
+  if(studioLockTransparency && canvas.colors[index]==="") return;
+  canvas.colors[index]=studioLayered?modBlendHex(canvas.colors[index],color,0.5):color;
+  canvas.regions[index]=color===""?0:region;
+}
+function modPaintSnapshot() {
+  const canvas=modCanvas();
+  studioUndoStack.push({colors:canvas.colors.slice(0),regions:canvas.regions.slice(0),nextRegion:canvas.nextRegion});
+  if(studioUndoStack.length>12) studioUndoStack.shift();
+  studioRedoStack=[];
+  studioStrokeRegion=canvas.nextRegion++;
+}
+function modPaintUndo(redo) {
+  const from=redo?studioRedoStack:studioUndoStack;
+  const to=redo?studioUndoStack:studioRedoStack;
+  if(from.length===0) return;
+  const canvas=modCanvas();
+  to.push({colors:canvas.colors.slice(0),regions:canvas.regions.slice(0),nextRegion:canvas.nextRegion});
+  const saved=from.pop();canvas.colors=saved.colors;canvas.regions=saved.regions;
+  canvas.nextRegion=saved.nextRegion;modRenderPaint();
+}
+function modPaintDot(x,y,color,region,size) {
+  const radius=Math.floor(size/2);
+  for(let dy=-radius;dy<=radius;dy++) for(let dx=-radius;dx<=radius;dx++)
+    modPaintSet(x+dx,y+dy,color,region);
+}
+function modPaintLine(x0,y0,x1,y1,color,region,size) {
+  const count=Math.max(Math.abs(x1-x0),Math.abs(y1-y0));
+  for(let i=0;i<=count;i++) {
+    const t=count===0?0:i/count;
+    modPaintDot(Math.round(x0+(x1-x0)*t),Math.round(y0+(y1-y0)*t),color,region,size);
+  }
+}
+function modPaintShape(tool,x0,y0,x1,y1) {
+  const color=modPaintColor();const region=studioStrokeRegion;
+  if(tool===4) {modPaintLine(x0,y0,x1,y1,color,region,studioBrushSize);return;}
+  const left=Math.min(x0,x1);const right=Math.max(x0,x1);
+  const top=Math.min(y0,y1);const bottom=Math.max(y0,y1);
+  if(tool===5) {
+    for(let y=top;y<=bottom;y++) for(let x=left;x<=right;x++)
+      if(studioFilled || x===left || x===right || y===top || y===bottom)
+        modPaintSet(x,y,color,region);
+  } else if(tool===6) {
+    const cx=(left+right)/2;const cy=(top+bottom)/2;
+    const rx=Math.max(0.5,(right-left)/2);const ry=Math.max(0.5,(bottom-top)/2);
+    for(let y=top;y<=bottom;y++) for(let x=left;x<=right;x++) {
+      const d=Math.pow((x-cx)/rx,2)+Math.pow((y-cy)/ry,2);
+      const inner=Math.pow((x-cx)/Math.max(0.5,rx-1),2)+
+        Math.pow((y-cy)/Math.max(0.5,ry-1),2);
+      if(d<=1.2 && (studioFilled || inner>=0.9)) modPaintSet(x,y,color,region);
+    }
+  }
+}
+function modPaintFill(x,y,gradient) {
+  const canvas=modCanvas();const start=modPaintIndex(x,y);
+  const targetColor=canvas.colors[start];const targetRegion=canvas.regions[start];
+  if(studioLockTransparency && targetColor==="") return;
+  const seen=[];for(let i=0;i<MOD_SIZE;i++) seen.push(false);
+  const queue=[start];const found=[];seen[start]=true;
+  const from=gradient?modColorRGB(studioPrimary):null;
+  const to=gradient?modColorRGB(studioSecondaryColor):null;
+  let minX=x;let maxX=x;let minY=y;let maxY=y;
+  for(let head=0;head<queue.length;head++) {
+    const index=queue[head];const px=index%MOD_W;const py=Math.floor(index/MOD_W);
+    found.push(index);minX=Math.min(minX,px);maxX=Math.max(maxX,px);
+    minY=Math.min(minY,py);maxY=Math.max(maxY,py);
+    const neighbors=[];
+    if(px>0) neighbors.push(index-1);
+    if(px<MOD_W-1) neighbors.push(index+1);
+    if(py>0) neighbors.push(index-MOD_W);
+    if(py<MOD_H-1) neighbors.push(index+MOD_W);
+    for(const next of neighbors) if(!seen[next]) {
+      seen[next]=true;
+      const sameArea=targetRegion>0?
+        canvas.regions[next]===targetRegion:
+        canvas.regions[next]===0 && canvas.colors[next]===targetColor;
+      if(sameArea) queue.push(next);
+    }
+  }
+  for(const index of found) {
+    const px=index%MOD_W;const py=Math.floor(index/MOD_W);
+    let t=0;
+    if(studioGradientDirection===0) t=(py-minY)/Math.max(1,maxY-minY);
+    else if(studioGradientDirection===1) t=(px-minX)/Math.max(1,maxX-minX);
+    else {
+      const cx=(minX+maxX)/2;const cy=(minY+maxY)/2;
+      const radius=Math.max(1,Math.sqrt(Math.pow(maxX-minX,2)+Math.pow(maxY-minY,2))/2);
+      t=clamp(Math.sqrt(Math.pow(px-cx,2)+Math.pow(py-cy,2))/radius,0,1);
+    }
+    const color=gradient?modColorMixRGB(from,to,t):modPaintColor();
+    canvas.colors[index]=studioLayered?modBlendHex(canvas.colors[index],color,0.5):color;
+    canvas.regions[index]=studioStrokeRegion;
+  }
+}
+
+const MOD_GLYPHS={
+  A:"010101111101101",B:"110101110101110",C:"011100100100011",
+  D:"110101101101110",E:"111100110100111",F:"111100110100100",
+  G:"011100101101011",H:"101101111101101",I:"111010010010111",
+  J:"001001001101010",K:"101101110101101",L:"100100100100111",
+  M:"101111111101101",N:"101111111111101",O:"010101101101010",
+  P:"110101110100100",Q:"010101101111011",R:"110101110101101",
+  S:"011100010001110",T:"111010010010010",U:"101101101101111",
+  V:"101101101101010",W:"101101111111101",X:"101101010101101",
+  Y:"101101010010010",Z:"111001010100111","0":"111101101101111",
+  "1":"010110010010111","2":"110001111100111","3":"110001110001110",
+  "4":"101101111001001","5":"111100110101010","6":"011100110101010",
+  "7":"111001010010010","8":"010101010101010","9":"010101011001110"
+};
+function modPaintText(x,y) {
+  const name=modNameSafe(modData.name).slice(0,10);
+  const color=modPaintColor();
+  for(let c=0;c<name.length;c++) {
+    const glyph=MOD_GLYPHS[name.slice(c,c+1)] || "";
+    for(let i=0;i<15;i++) if(glyph.slice(i,i+1)==="1")
+      modPaintSet(x+c*4+i%3,y+Math.floor(i/3),color,studioStrokeRegion);
+  }
+}
+function modPaintStamp(x,y) {
+  const color=modPaintColor();
+  for(let dy=-5;dy<=5;dy++) for(let dx=-5;dx<=5;dx++) {
+    const egg=Math.pow(dx/4.7,2)+Math.pow((dy+1)/5.5,2)<1;
+    if(egg) modPaintSet(x+dx,y+dy,color,studioStrokeRegion);
+  }
+  const eyes=MOD_PALETTE[20];
+  modPaintSet(x-2,y-1,eyes,studioStrokeRegion);
+  modPaintSet(x+2,y-1,eyes,studioStrokeRegion);
+  for(let dx=-2;dx<=2;dx++) modPaintSet(x+dx,y+2+(Math.abs(dx)===2?-1:0),eyes,studioStrokeRegion);
+}
+function modPaintShade(x,y,brighten) {
+  const canvas=modCanvas();const index=modPaintIndex(x,y);
+  const color=canvas.colors[index];if(color==="") return;
+  const digits="0123456789abcdef";const rgb=[];
+  for(let c=0;c<3;c++) {
+    const high=modIndexOf(digits,color.slice(1+c*2,2+c*2).toLowerCase(),0);
+    const low=modIndexOf(digits,color.slice(2+c*2,3+c*2).toLowerCase(),0);
+    rgb.push(Math.max(0,high)*16+Math.max(0,low));
+  }
+  const factor=brighten?0.22:-0.22;
+  canvas.colors[index]="#"+modHex(rgb[0]+(brighten?255-rgb[0]:rgb[0])*factor)+
+    modHex(rgb[1]+(brighten?255-rgb[1]:rgb[1])*factor)+
+    modHex(rgb[2]+(brighten?255-rgb[2]:rgb[2])*factor);
+  canvas.regions[index]=studioStrokeRegion;
+}
+function modPaintBrushAt(x,y) {
+  if(studioTool===12) {
+    for(let i=0;i<studioBrushSize*3;i++) {
+      const px=x+Math.floor(random(-studioBrushSize*2,studioBrushSize*2+1));
+      const py=y+Math.floor(random(-studioBrushSize*2,studioBrushSize*2+1));
+      modPaintSet(px,py,modPaintColor(),studioStrokeRegion);
+    }
+  } else if(studioTool===14 || studioTool===15)
+    modPaintShade(x,y,studioTool===14);
+  else {
+    const color=studioTool===1?"":modPaintColor();
+    modPaintDot(x,y,color,studioStrokeRegion,studioBrushSize);
+    if(studioTool===13) modPaintDot(MOD_W-1-x,y,color,studioStrokeRegion,studioBrushSize);
+  }
+}
+function modPaintMove(x0,y0,x1,y1) {
+  if(!studioSelection) return;
+  const canvas=modCanvas();
+  const before=studioUndoStack[studioUndoStack.length-1];
+  if(!before) return;
+  const dx=x1-x0;const dy=y1-y0;
+  const sel=studioSelection;
+  for(let y=sel.y0;y<=sel.y1;y++) for(let x=sel.x0;x<=sel.x1;x++) {
+    const index=modPaintIndex(x,y);canvas.colors[index]="";canvas.regions[index]=0;
+  }
+  for(let y=sel.y0;y<=sel.y1;y++) for(let x=sel.x0;x<=sel.x1;x++) {
+    const nx=x+dx;const ny=y+dy;
+    if(nx<0 || nx>=MOD_W || ny<0 || ny>=MOD_H) continue;
+    const old=modPaintIndex(x,y);const next=modPaintIndex(nx,ny);
+    canvas.colors[next]=before.colors[old];canvas.regions[next]=before.regions[old];
+  }
+  studioSelection={x0:clamp(sel.x0+dx,0,MOD_W-1),y0:clamp(sel.y0+dy,0,MOD_H-1),
+    x1:clamp(sel.x1+dx,0,MOD_W-1),y1:clamp(sel.y1+dy,0,MOD_H-1)};
+}
+function modPaintPreview(x,y) {
+  const sprites=[];
+  if(studioPaintDown && (studioTool===4 || studioTool===5 || studioTool===6 || studioTool===9 || studioTool===10)) {
+    const left=Math.min(studioStartX,x);const right=Math.max(studioStartX,x);
+    const top=Math.min(studioStartY,y);const bottom=Math.max(studioStartY,y);
+    if(studioTool===4) {
+      const n=Math.max(Math.abs(x-studioStartX),Math.abs(y-studioStartY));
+      for(let i=0;i<=n;i++) {
+        const t=n===0?0:i/n;
+        sprites.push({x:138+Math.round(studioStartX+(x-studioStartX)*t)*8,
+          y:70+Math.round(studioStartY+(y-studioStartY)*t)*8,width:8,height:8,tint:"#ffc453a8"});
+      }
+    } else {
+      for(let px=left;px<=right;px++) {
+        sprites.push({x:138+px*8,y:70+top*8,width:8,height:8,tint:"#ffc453a8"});
+        sprites.push({x:138+px*8,y:70+bottom*8,width:8,height:8,tint:"#ffc453a8"});
+      }
+      for(let py=top+1;py<bottom;py++) {
+        sprites.push({x:138+left*8,y:70+py*8,width:8,height:8,tint:"#ffc453a8"});
+        sprites.push({x:138+right*8,y:70+py*8,width:8,height:8,tint:"#ffc453a8"});
+      }
+    }
+  } else if(studioSelection) {
+    const sel=studioSelection;
+    for(let px=sel.x0;px<=sel.x1;px++) {
+      sprites.push({x:138+px*8,y:70+sel.y0*8,width:8,height:8,tint:"#ffc45388"});
+      sprites.push({x:138+px*8,y:70+sel.y1*8,width:8,height:8,tint:"#ffc45388"});
+    }
+    for(let py=sel.y0+1;py<sel.y1;py++) {
+      sprites.push({x:138+sel.x0*8,y:70+py*8,width:8,height:8,tint:"#ffc45388"});
+      sprites.push({x:138+sel.x1*8,y:70+py*8,width:8,height:8,tint:"#ffc45388"});
+    }
+  }
+  setSprites(studioPreviewPixels,sprites);
+}
+function modPaintStart(x,y) {
+  if(x<0 || y<0 || x>=MOD_W || y>=MOD_H) return;
+  studioStartX=x;studioStartY=y;studioLastX=x;studioLastY=y;
+  if(studioTool===8) {
+    const color=modCanvas().colors[modPaintIndex(x,y)];
+    if(color!=="") {
+      let best=0;let score=999999;
+      const digits="0123456789abcdef";const rgb=[];
+      for(let c=0;c<3;c++) rgb.push(modIndexOf(digits,color.slice(1+c*2,2+c*2).toLowerCase(),0)*16+
+        modIndexOf(digits,color.slice(2+c*2,3+c*2).toLowerCase(),0));
+      for(let i=0;i<MOD_RGB.length;i++) {
+        const p=MOD_RGB[i];const d=Math.pow(rgb[0]-p[0],2)+Math.pow(rgb[1]-p[1],2)+Math.pow(rgb[2]-p[2],2);
+        if(d<score) {score=d;best=i;}
+      }
+      studioPrimary=best;modRenderPalette();
+    }
+    return;
+  }
+  if(studioTool===9) {studioPaintDown=true;modPaintPreview(x,y);return;}
+  modPaintSnapshot();
+  if(studioTool===2 || studioTool===3) {
+    modPaintFill(x,y,studioTool===3);modRenderPaint();return;
+  }
+  if(studioTool===7) {modPaintStamp(x,y);modRenderPaint();return;}
+  if(studioTool===11) {modPaintText(x,y);modRenderPaint();return;}
+  studioPaintDown=true;
+  if(studioTool===0 || studioTool===1 || studioTool>=12) {
+    modPaintBrushAt(x,y);modRenderPaint();
+  } else modPaintPreview(x,y);
+}
+function modPaintDrag(x,y) {
+  if(!studioPaintDown) return;
+  x=clamp(x,0,MOD_W-1);y=clamp(y,0,MOD_H-1);
+  if(studioTool===0 || studioTool===1 || studioTool>=12) {
+    const n=Math.max(Math.abs(x-studioLastX),Math.abs(y-studioLastY));
+    for(let i=1;i<=n;i++) {
+      const t=i/n;modPaintBrushAt(Math.round(studioLastX+(x-studioLastX)*t),
+        Math.round(studioLastY+(y-studioLastY)*t));
+    }
+    modRenderPaint();
+  } else modPaintPreview(x,y);
+  studioLastX=x;studioLastY=y;
+}
+function modPaintEnd(x,y) {
+  if(!studioPaintDown) return;
+  x=clamp(x,0,MOD_W-1);y=clamp(y,0,MOD_H-1);
+  if(studioTool===4 || studioTool===5 || studioTool===6)
+    modPaintShape(studioTool,studioStartX,studioStartY,x,y);
+  else if(studioTool===9)
+    studioSelection={x0:Math.min(studioStartX,x),y0:Math.min(studioStartY,y),
+      x1:Math.max(studioStartX,x),y1:Math.max(studioStartY,y)};
+  else if(studioTool===10) modPaintMove(studioStartX,studioStartY,x,y);
+  studioPaintDown=false;modRenderPaint();modPaintPreview(x,y);
+}
+
+function studioUpdateHome() {
+  studioTitle.text="MOD "+String(studioModSlot+1)+": "+modData.name;
+  studioSummary.text=String(modData.bossCount)+" BOSSES  •  "+
+    String(modData.biomeCount)+" BIOMES  •  "+
+    String(modData.elementCount)+" SPAWNABLES";
+  studioObjectsButton.text="OBJECTS: "+modBiomeName(studioSelectedBiome).slice(0,12);
+  studioBossMLButton.text="BOSSML: "+modBossName(studioSelectedBoss).slice(0,12);
+}
+function studioUpdateLibrary() {
+  studioTitle.text="YOUR MODS";
+  const cards=[studioModOne,studioModTwo,studioModThree,
+    studioModFour,studioModFive,studioModSix];
+  for(let i=0;i<MOD_SLOTS;i++)
+    cards[i].text="MOD "+String(i+1)+"\n"+(modSlotNames[i] || "+ NEW MOD");
+}
+function studioUpdateCollection() {
+  const kind=studioConfigKind;
+  const count=studioEntityCount(kind);
+  const max=studioEntityMax(kind);
+  const heading=kind==="boss"?"BOSSES":kind==="biome"?"BIOMES":"SPAWNABLES";
+  studioTitle.text=heading+" EDITOR";
+  if(studioMessageClock<=0) studioStatus.text="Select a creation to edit. X saves.";
+  studioCollectionTitle.text=heading+" IN "+modData.name;
+  studioCollectionHelp.text="Tap a card to edit. Tap + to create another.";
+  for(let i=0;i<studioCollectionNodes.length;i++) {
+    const card=studioCollectionNodes[i];
+    card.visible=i<max && i<=count;
+    if(!card.visible) continue;
+    if(i===count) {
+      card.text="+ ADD "+(kind==="boss"?"BOSS":kind==="biome"?"BIOME":"SPAWNABLE");
+      card.disabled=false;
+      continue;
+    }
+    const name=kind==="boss"?modBossName(i):
+      kind==="biome"?modBiomeName(i):modElementName(i);
+    const detail=kind==="boss"?modBossProfile(i).bossMode.toUpperCase():
+      kind==="biome"?"GRADIENT + OBJECTS":
+      MOD_BEHAVIORS[modData.elements[i].behavior];
+    card.text=String(i+1)+". "+name.slice(0,16)+"\n"+detail;
+    card.disabled=i===studioSelectedIndex(kind);
+  }
+}
+function studioUpdateConfig() {
+  const kind=studioConfigKind;
+  studioTitle.text=kind==="boss"?"BOSS EDITOR":kind==="biome"?
+    "BIOME EDITOR":"SPAWNABLE EDITOR";
+  if(studioMessageClock<=0) studioStatus.text="Tap a setting to change it. X saves.";
+  const boss=modBossProfile(studioSelectedBoss);
+  const biome=modBiomeProfile(studioSelectedBiome);
+  if(kind==="boss" && boss.bossMode==="body" &&
+      studioSelectedMove<8 && studioSelectedMove!==0)
+    studioSelectedMove=8;
+  else if(kind==="boss" && boss.bossMode==="default" && studioSelectedMove>=8)
+    studioSelectedMove=0;
+  studioConfigTitle.text=kind==="boss"?"BOSS "+String(studioSelectedBoss+1)+": "+modBossName(studioSelectedBoss).slice(0,12):
+    kind==="element"?"ELEMENT "+String(studioSelectedElement+1)+": "+modElementName(studioSelectedElement).slice(0,12):
+      "BIOME "+String(studioSelectedBiome+1)+": "+modBiomeName(studioSelectedBiome).slice(0,12);
+  if(kind==="boss") {
+    studioConfigA.text="BOSS COLOR";
+    studioConfigB.text="CHOOSE MOVES";
+    studioConfigC.text="DRAW BOSS";
+    studioConfigD.text="DRAW HITBOX";
+    studioConfigE.text=boss.bossMode==="body"?"BODY MODE *":
+      boss.bossMode==="bossML"?"bossML / TAP FOR BODY":"DEFAULT / TAP FOR BODY";
+    studioConfigF.text="DRAW "+MOD_MOVES[studioSelectedMove]+" MOVE";
+  } else if(kind==="element") {
+    const element=modData.elements[studioSelectedElement];
+    studioConfigA.text="BEHAVIOR: "+MOD_BEHAVIORS[element.behavior];
+    studioConfigB.text="SUMMON: "+(element.boss<0?"NOTHING":modBossName(element.boss).slice(0,12));
+    studioConfigC.text="DRAW ELEMENT";
+    studioConfigD.text="DRAW HITBOX";
+    studioConfigE.text="IMPORT PAINT";
+    studioConfigF.text="CHOOSE SPAWNABLES";
+  } else {
+    studioConfigA.text="TOP COLOR";
+    studioConfigB.text="BOTTOM COLOR";
+    studioConfigC.text="GRADIENT: "+["DOWN","ACROSS","RADIAL"][biome.gradientDirection];
+    studioConfigD.text="CHOOSE OBJECTS";
+    studioConfigE.text="BIOME READY";
+    studioConfigF.text="EDIT SPAWNABLES";
+  }
+  studioColorTop.visible=kind==="boss" || kind==="biome";
+  studioColorBottom.visible=kind==="biome";
+  studioColorTop.tint=(kind==="boss"?boss.bossColor:biome.gradientTop)+"ff";
+  studioColorBottom.tint=biome.gradientBottom+"ff";
+  studioFightOpen.visible=kind==="boss";
+  studioConfigSave.visible=kind!=="boss";
+  studioConfigSlot.text="ALL "+(kind==="boss"?"BOSSES":kind==="biome"?"BIOMES":"SPAWNABLES");
+  const full=kind==="boss"?modData.bossCount>=MOD_BOSS_TYPES:
+    kind==="biome"?modData.biomeCount>=MOD_BIOME_TYPES:
+    modData.elementCount>=MOD_ELEMENT_TYPES;
+  studioConfigAdd.text=full?"MAX REACHED":"COPY THIS";
+  studioConfigAdd.disabled=full;
+  studioConfigRename.text="RENAME";
+  studioConfigDelete.text=studioEntityCount(kind)<=1?"KEEP ONE":"DELETE";
+  studioConfigDelete.disabled=studioEntityCount(kind)<=1;
+}
+function studioUpdateFightSettings() {
+  const boss=modBossProfile(studioSelectedBoss);
+  studioDifficulty.text="DIFFICULTY: "+MOD_DIFFICULTIES[boss.difficulty];
+  const phaseButtons=[studioPhaseOne,studioPhaseTwo,studioPhaseThree];
+  const musicButtons=[studioMusicOne,studioMusicTwo,studioMusicThree];
+  for(let i=0;i<3;i++) {
+    phaseButtons[i].text=["I","II","III"][i]+": "+
+      (boss.phaseEnabled[i]?"ON":"OFF");
+    phaseButtons[i].disabled=boss.phaseEnabled[i];
+    musicButtons[i].text="MUSIC: "+MOD_MUSIC_NAMES[boss.music[i]];
+  }
+}
+function studioStopMusicPreview() {
+  if(studioMusicPreview) Audio.stop(studioMusicPreview);
+  studioMusicPreview=0;
+}
+function studioPreviewMusic(phase) {
+  studioStopMusicPreview();
+  const choice=modBossProfile(studioSelectedBoss).music[phase-1];
+  if(choice===3) {studioNotice("SILENT PHASE");return;}
+  if(choice>=4 && !Storage.exists("an-egg-track-"+String(choice-3)+".ogg")) {
+    studioNotice("SD TRACK MISSING: an-egg-track-"+String(choice-3)+".ogg");return;
+  }
+  studioMusicPreview=Audio.play(MOD_MUSIC_PATHS[choice],{loop:false,volume:0.5});
+  if(!studioMusicPreview) studioNotice("TRACK COULD NOT PLAY");
+}
+function studioUpdatePicker() {
+  const choices=studioPickerKind==="objects"?
+    MOD_OBJECTS.slice(studioObjectPage*16,studioObjectPage*16+16):studioMoveChoices();
+  const boss=modBossProfile(studioSelectedBoss);
+  const biome=modBiomeProfile(studioSelectedBiome);
+  studioPickerTitle.text=studioPickerKind==="objects"?"OBJECTS IN YOUR BIOME":
+    boss.bossMode==="body"?"BODY MOVES":"BOSS MOVES";
+  studioObjectHelp.text=studioPickerKind==="objects"?
+    "Tap objects to include them. Up to eight spawn per chunk.":
+    "BODY MODE: teleport plus the phase II and III attacks.";
+  for(let i=0;i<studioPickNodes.length;i++) {
+    const node=studioPickNodes[i];
+    const objectIndex=i+studioObjectPage*16;
+    node.visible=i<choices.length && (studioPickerKind!=="objects" ||
+      objectIndex<16 || objectIndex-13<modData.elementCount);
+    if(!node.visible) continue;
+    const moveIndex=studioPickerKind==="objects"?i+studioObjectPage*16:studioMoveIndex(i);
+    const chosen=studioPickerKind==="objects"?biome.objects[moveIndex]:boss.bossMoves[moveIndex];
+    node.text=chosen?"* "+choices[i]:choices[i];
+    node.disabled=chosen;
+  }
+  studioPickerPage.text="PAGE "+String(studioObjectPage+1)+" / 2";
+}
+function studioMoveChoices() {
+  const choices=[];
+  const indices=studioMoveIndices();
+  for(const index of indices) choices.push(MOD_MOVES[index]);
+  return choices;
+}
+function studioMoveIndices() {
+  const boss=modBossProfile(studioSelectedBoss);
+  if(boss.bossMode==="body") return [0,8,9,10,11];
+  if(boss.bossMode==="bossML") return [0,1,2,3,4,5,6,7,8,9,10,11];
+  return [0,1,2,3,4,5,6,7];
+}
+function studioMoveIndex(position) {return studioMoveIndices()[position];}
+function studioUpdatePaintControls() {
+  const label=studioTarget==="bossArt"?"BOSS TEXTURE":
+    studioTarget==="bossHitbox"?"BOSS HITBOX":
+    studioTarget==="elementArt"?"ELEMENT "+String(studioSelectedElement+1)+" TEXTURE":
+    studioTarget==="elementHitbox"?"ELEMENT "+String(studioSelectedElement+1)+" HITBOX":
+    studioTarget==="moveArt"?MOD_MOVES[studioSelectedMove]+" TEXTURE":
+      MOD_MOVES[studioSelectedMove]+" HITBOX";
+  studioTitle.text="PAINT: "+label;
+  studioPaintTitle.visible=false;
+  studioTargetButton.text=modIsHitbox()?"ART >":"HITBOX >";
+  for(let i=0;i<studioToolNodes.length;i++) studioToolNodes[i].disabled=i===studioTool;
+  studioSize.text="SIZE "+String(studioBrushSize);
+  studioShapeFill.text=studioFilled?"FILLED":"OUTLINE";
+  studioGradientDir.text="GRAD "+["V","H","R"][studioGradientDirection];
+  studioLock.text=studioLockTransparency?"LOCK*":"LOCK";
+  studioBlend.text=studioLayered?"MIX*":"MIX";
+  modRenderPalette();modRenderPaint();modPaintPreview(0,0);
+}
+function studioShow(screen) {
+  if(studioScreen==="fightSettings" && screen!=="fightSettings") studioStopMusicPreview();
+  studioScreen=screen;
+  studioTitle.visible=screen!=="color";
+  studioStatus.visible=screen!=="color";
+  studioLibrary.visible=screen==="library";
+  studioHome.visible=screen==="home";
+  studioCollection.visible=screen==="collection";
+  studioConfig.visible=screen==="config";
+  studioFightSettings.visible=screen==="fightSettings";
+  studioObjectPicker.visible=screen==="picker";
+  studioKeyboard.visible=screen==="name";
+  studioConfirm.visible=screen==="confirm";
+  studioColorPicker.visible=screen==="color";
+  studioPainter.visible=screen==="paint";
+  for(const node of [studioLibraryHelp,studioModOne,studioModTwo,
+    studioModThree,studioModFour,studioModFive,studioModSix,
+    studioLibraryBack]) node.visible=screen==="library";
+  for(const node of [studioNameButton,studioBossButton,studioElementButton,
+    studioBiomeButton,studioObjectsButton,studioBossMLButton,studioSaveButton,
+    studioImportButton,studioPlayButton,studioSummary]) node.visible=screen==="home";
+  for(const node of [studioCollectionTitle,studioCollectionHelp,studioCollectionBack])
+    node.visible=screen==="collection";
+  for(const node of studioCollectionNodes) node.visible=screen==="collection";
+  for(const node of [studioConfigTitle,studioConfigA,studioConfigB,studioConfigC,
+    studioConfigD,studioConfigE,studioConfigF,studioConfigBack,studioFightOpen,
+    studioConfigSlot,studioConfigAdd,studioConfigRename,studioConfigDelete,
+    studioConfigSave,
+    studioColorTop,studioColorBottom])
+    node.visible=screen==="config";
+  for(const node of [studioConfirmTitle,studioConfirmText,studioConfirmCancel,
+    studioConfirmDelete]) node.visible=screen==="confirm";
+  for(const node of [studioFightSettingsTitle,studioDifficulty,studioPhaseOne,
+    studioMusicOne,studioMusicOnePreview,studioPhaseTwo,studioMusicTwo,
+    studioMusicTwoPreview,studioPhaseThree,studioMusicThree,
+    studioMusicThreePreview,studioFightSettingsHelp,studioFightSettingsBack])
+    node.visible=screen==="fightSettings";
+  for(const node of [studioPickerTitle,studioObjectHelp,studioObjectBack,studioPickerPage])
+    node.visible=screen==="picker";
+  for(const node of studioPickNodes) node.visible=screen==="picker";
+  studioPickerPage.visible=screen==="picker" && studioPickerKind==="objects";
+  for(const node of [studioKeyboardTitle,studioNamePreview,studioKeySpace,
+    studioKeyBack,studioKeyDone]) node.visible=screen==="name";
+  for(const node of studioKeyNodes) node.visible=screen==="name";
+  for(const node of [studioColorTitle,studioColorPickerPreview,studioColorHex,
+    studioColorPresets,studioColorBars,studioColorRed,studioColorGreen,
+    studioColorBlue,studioColorRedMark,studioColorGreenMark,
+    studioColorBlueMark,studioColorRedMinus,studioColorRedPlus,
+    studioColorGreenMinus,studioColorGreenPlus,studioColorBlueMinus,
+    studioColorBluePlus,studioColorHelp,studioColorDone]) node.visible=screen==="color";
+  studioColorPresetPick.visible=false;
+  for(const node of [studioPaintTitle,studioTargetButton,studioCanvasPanel,
+    studioCustomButton,studioCustomColor,studioPreviewPixels,studioPalette,studioPalettePick,studioSize,
+    studioSecondary,studioShapeFill,studioGradientDir,studioLock,studioBlend,
+    studioUndo,studioRedo,
+    studioPaintImport,studioClear,studioPaintDone]) node.visible=screen==="paint";
+  modSetVisible(studioPixelBatches(),screen==="paint");
+  for(const node of studioToolNodes) node.visible=screen==="paint";
+  studioPaintCursor.visible=false;
+  if(screen==="library") studioUpdateLibrary();
+  if(screen==="home") studioUpdateHome();
+  if(screen==="collection") studioUpdateCollection();
+  if(screen==="name") studioTitle.text=studioNameTarget==="mod"?"NAME YOUR MOD":
+    "NAME "+studioNameTarget.toUpperCase();
+  if(screen==="config") studioTitle.text="MOD SETTINGS";
+  if(screen==="picker") studioTitle.text="MOD COLLECTION";
+  if(screen==="config") studioUpdateConfig();
+  if(screen==="confirm") {
+    const kind=studioConfigKind;
+    const name=kind==="boss"?modBossName(studioDeleteIndex):
+      kind==="biome"?modBiomeName(studioDeleteIndex):modElementName(studioDeleteIndex);
+    studioConfirmTitle.text="DELETE "+kind.toUpperCase()+"?";
+    studioConfirmText.text=name+" will be removed from this mod.";
+  }
+  if(screen==="fightSettings") studioUpdateFightSettings();
+  if(screen==="picker") studioUpdatePicker();
+  if(screen==="name") {studioNamePreview.text=studioNameRead();
+    studioKeyboardTitle.text=studioNameTarget==="mod"?"NAME YOUR MOD":
+      "NAME "+studioNameTarget.toUpperCase();}
+  if(screen==="paint") studioUpdatePaintControls();
+}
+function studioOpen() {
+  modScanSlots();
+  state="studio";paused=false;questOpen=false;
+  if(music) {Audio.stop(music);music=0;musicPath="";}
+  setWindParticles(false);
+  Scene.open("studio");studioShow("library");
+  studioPointerX=320;studioPointerY=240;
+  studioPointer.x=315;studioPointer.y=235;
+  sceneSwitchDelay=0.16;
+}
+function studioOpenPaint(target) {
+  studioTarget=target;
+  studioUndoStack=[];studioRedoStack=[];studioSelection=null;
+  studioPaintDown=false;studioShow("paint");
+}
+function studioBuildUI() {
+  modScanSlots();
+  modLoadSaved();
+  for(let i=0;i<MOD_TOOLS.length;i++) {
+    const node=spawn("studioToolTemplate","studioToolGrid",13+(i%2)*58,68+Math.floor(i/2)*42);
+    node.text=MOD_TOOLS[i]==="MIRROR"?"MIRR":MOD_TOOLS[i];studioToolNodes.push(node);
+  }
+  for(let i=0;i<MOD_KEYS.length;i++) {
+    const node=spawn("studioKeyTemplate","studioKeyGrid",28+(i%9)*66,186+Math.floor(i/9)*50);
+    node.text=MOD_KEYS.slice(i,i+1);studioKeyNodes.push(node);
+  }
+  for(let i=0;i<16;i++) {
+    const node=spawn("studioPickTemplate","studioObjectGrid",27+(i%4)*151,139+Math.floor(i/4)*52);
+    studioPickNodes.push(node);
+  }
+  studioCollectionNodes=[studioCollectionOne,studioCollectionTwo,
+    studioCollectionThree,studioCollectionFour,studioCollectionFive,
+    studioCollectionSix];
+  studioShow("library");
+}
+function studioImportPaintFile() {
+  const raw=Storage.read("an-egg-paint-import.txt","");
+  if(!raw.startsWith("ANEGG-PAINT-1\n")) {studioNotice("NO PAINT IMPORT ON SD");return;}
+  const canvas=decodeModCanvas(raw.slice(14).trim());
+  if(!canvas) {studioNotice("PAINT IMPORT INVALID");return;}
+  modPaintSnapshot();modData.art[modPaintKey()]=canvas;
+  modRebuildMaskFlags();
+  studioUndoStack=[];studioRedoStack=[];
+  modRenderPaint();studioNotice("PAINT IMPORTED FROM SD");
+}
+function studioImportBossML() {
+  const raw=Storage.read("an-egg-bossml.txt","");
+  if(!raw.startsWith("ANEGG-BOSSML-1\n") || raw.length>4096) {
+    studioNotice("NO VALID bossML ON SD");return;
+  }
+  const moves=[];for(let i=0;i<MOD_MOVES.length;i++) moves.push(false);
+  const boss=modBossProfile(studioSelectedBoss);
+  let found=false;
+  for(const line of raw.split("\n")) {
+    const parts=line.split("=");const key=(parts[0] || "").trim().toUpperCase();
+    const value=(parts[1] || "").trim().toUpperCase();
+    if(key==="NAME") {
+      if(studioSelectedBoss===0) modData.bossName=modNameSafe(value);
+      else boss.name=modNameSafe(value);
+    }
+    else if(key==="COLOR") boss.bossColor=modColor(value,boss.bossColor);
+    else if(key==="DIFFICULTY") {
+      for(let i=0;i<MOD_DIFFICULTIES.length;i++)
+        if(value===MOD_DIFFICULTIES[i] || value===String(i)) boss.difficulty=i;
+    }
+    else if(key==="PHASES") {
+      const enabled=[false,false,false];
+      for(const word of value.split(",")) {
+        const phase=word.trim();
+        if(phase==="1" || phase==="I") enabled[0]=true;
+        else if(phase==="2" || phase==="II") enabled[1]=true;
+        else if(phase==="3" || phase==="III") enabled[2]=true;
+      }
+      if(enabled[0] || enabled[1] || enabled[2]) boss.phaseEnabled=enabled;
+    }
+    else if(key==="MUSIC1" || key==="MUSIC2" || key==="MUSIC3") {
+      const phase=Number(key.slice(5,6))-1;
+      for(let i=0;i<MOD_MUSIC_NAMES.length;i++)
+        if(value===MOD_MUSIC_NAMES[i] || value===String(i)) boss.music[phase]=i;
+    }
+    else if(key==="MOVES") {
+      for(const word of value.split(",")) {
+        const label=word.trim();
+        for(let i=0;i<MOD_MOVES.length;i++) if(label===MOD_MOVES[i]) {moves[i]=true;found=true;}
+      }
+    }
+  }
+  if(!found) {studioNotice("bossML NEEDS MOVES=");return;}
+  boss.bossMoves=moves;boss.bossMode="bossML";
+  studioNotice("bossML IMPORTED FROM SD");studioUpdateHome();
+}
+function studioCanvasCell(x,y) {
+  if(!inside(x,y,138,70,336,336)) return null;
+  return {x:clamp(Math.floor((x-138)/8),0,MOD_W-1),
+    y:clamp(Math.floor((y-70)/8),0,MOD_H-1)};
+}
+function studioPress(x,y) {
+  if(studioScreen==="library") {
+    if(inside(x,y,185,376,270,55)) {showTitle();return;}
+    for(let i=0;i<MOD_SLOTS;i++) {
+      const bx=27+(i%3)*203;const by=130+Math.floor(i/3)*101;
+      if(inside(x,y,bx,by,180,82)) {
+        studioModSlot=i;studioSelectedElement=0;studioSelectedBoss=0;
+        studioSelectedBiome=0;studioObjectPage=0;
+        modLoadSaved();studioShow("home");return;
+      }
+    }
+  } else if(studioScreen==="home") {
+    if(inside(x,y,26,94,282,53)) studioOpenName("mod");
+    else if(inside(x,y,332,94,282,53)) {studioConfigKind="boss";studioShow("collection");}
+    else if(inside(x,y,26,160,282,53)) {studioConfigKind="element";studioShow("collection");}
+    else if(inside(x,y,332,160,282,53)) {studioConfigKind="biome";studioShow("collection");}
+    else if(inside(x,y,26,226,282,53)) {
+      studioConfigKind="biome";studioPickerKind="objects";studioPickerReturn="home";
+      studioObjectPage=0;studioShow("picker");
+    }
+    else if(inside(x,y,332,226,282,53)) studioImportBossML();
+    else if(inside(x,y,26,312,180,56)) modSave();
+    else if(inside(x,y,229,312,180,56)) modImport();
+    else if(inside(x,y,432,312,180,56)) {
+      if(modSave()) showSaves();
+    }
+  } else if(studioScreen==="collection") {
+    if(inside(x,y,185,397,270,52)) {studioShow("home");return;}
+    for(let i=0;i<studioEntityMax(studioConfigKind);i++) {
+      const bx=27+(i%3)*203;const by=133+Math.floor(i/3)*108;
+      if(!inside(x,y,bx,by,180,87)) continue;
+      const count=studioEntityCount(studioConfigKind);
+      if(i<count) {
+        studioSelectIndex(studioConfigKind,i);studioShow("config");return;
+      }
+      if(i===count && studioAddEntity(studioConfigKind,-1)) {
+        studioShow("config");return;
+      }
+    }
+  } else if(studioScreen==="config") {
+    if(inside(x,y,27,343,180,38)) {studioShow("collection");return;}
+    if(inside(x,y,220,343,180,38)) {
+      if(studioAddEntity(studioConfigKind,studioSelectedIndex(studioConfigKind)))
+        studioShow("config");
+      return;
+    }
+    if(inside(x,y,413,343,96,38)) {
+      studioOpenName(studioConfigKind);return;
+    }
+    if(inside(x,y,516,343,97,38)) {
+      if(studioEntityCount(studioConfigKind)>1) {
+        studioDeleteIndex=studioSelectedIndex(studioConfigKind);studioShow("confirm");
+      }
+      return;
+    }
+    if(inside(x,y,27,389,282,54) && studioConfigKind==="boss") {
+      studioShow("fightSettings");return;
+    }
+    if(inside(x,y,27,389,282,54)) {modSave();return;}
+    if(inside(x,y,331,389,282,54)) {studioShow("collection");return;}
+    const col=x<320?0:1;const row=y>=142 && y<195?0:y>=211 && y<264?1:y>=280 && y<333?2:-1;
+    if(row<0 || x<27 || x>613) return;
+    const choice=row*2+col;
+    if(studioConfigKind==="boss") {
+      const boss=modBossProfile(studioSelectedBoss);
+      if(choice===0) {studioOpenColor("boss","config");return;}
+      else if(choice===1) {studioPickerKind="moves";studioShow("picker");return;}
+      else if(choice===2) {studioOpenPaint("bossArt");return;}
+      else if(choice===3) {studioOpenPaint("bossHitbox");return;}
+      else if(choice===4) {
+        boss.bossMode=boss.bossMode==="body"?"default":"body";
+        if(boss.bossMode==="body") {
+          studioSelectedMove=8;
+          boss.bossMoves[0]=true;
+          for(let i=8;i<12;i++) boss.bossMoves[i]=true;
+        } else {
+          studioSelectedMove=0;
+          let hasDefaultMove=false;
+          for(let i=0;i<8;i++) if(boss.bossMoves[i]) hasDefaultMove=true;
+          if(!hasDefaultMove) boss.bossMoves[0]=true;
+        }
+        studioNotice(boss.bossMode==="body"?"BODY MOVES READY":"DEFAULT MOVES READY");
+      }
+      else if(choice===5) {studioOpenPaint("moveArt");return;}
+    } else if(studioConfigKind==="element") {
+      const element=modData.elements[studioSelectedElement];
+      if(choice===0) element.behavior=(element.behavior+1)%MOD_BEHAVIORS.length;
+      else if(choice===1) element.boss=element.boss+1>=modData.bossCount?-1:element.boss+1;
+      else if(choice===2) {studioOpenPaint("elementArt");return;}
+      else if(choice===3) {studioOpenPaint("elementHitbox");return;}
+      else if(choice===4) {studioTarget="elementArt";studioImportPaintFile();return;}
+      else if(choice===5) {studioShow("collection");return;}
+    } else {
+      if(choice===0) {studioOpenColor("top","config");return;}
+      else if(choice===1) {studioOpenColor("bottom","config");return;}
+      else if(choice===2) {
+        const biome=modBiomeProfile(studioSelectedBiome);
+        biome.gradientDirection=(biome.gradientDirection+1)%3;
+      }
+      else if(choice===3) {
+        studioPickerKind="objects";studioPickerReturn="config";
+        studioObjectPage=0;studioShow("picker");return;
+      }
+      else if(choice===4) studioNotice("CHOOSE MOD ON SAVE FILE SCREEN");
+      else if(choice===5) {studioConfigKind="element";studioShow("collection");return;}
+      modRefreshGradient();
+    }
+    studioUpdateConfig();
+  } else if(studioScreen==="fightSettings") {
+    const boss=modBossProfile(studioSelectedBoss);
+    if(inside(x,y,185,413,270,43)) {studioShow("config");return;}
+    if(inside(x,y,28,135,584,48))
+      boss.difficulty=(boss.difficulty+1)%MOD_DIFFICULTIES.length;
+    for(let i=0;i<3;i++) {
+      const rowY=198+i*57;
+      if(inside(x,y,28,rowY,116,48)) {
+        let active=0;for(const enabled of boss.phaseEnabled) if(enabled) active++;
+        if(boss.phaseEnabled[i] && active<=1)
+          studioNotice("KEEP AT LEAST ONE PHASE");
+        else boss.phaseEnabled[i]=!boss.phaseEnabled[i];
+      } else if(inside(x,y,158,rowY,339,48)) {
+        studioStopMusicPreview();
+        boss.music[i]=(boss.music[i]+1)%MOD_MUSIC_NAMES.length;
+      } else if(inside(x,y,513,rowY,99,48)) studioPreviewMusic(i+1);
+    }
+    studioUpdateFightSettings();
+  } else if(studioScreen==="picker") {
+    if(inside(x,y,185,403,270,48)) {studioShow(studioPickerKind==="moves"?
+      "config":studioPickerReturn);return;}
+    if(studioPickerKind==="objects" && inside(x,y,28,403,140,48)) {
+      studioObjectPage=(studioObjectPage+1)%2;studioUpdatePicker();return;
+    }
+    const col=Math.floor((x-27)/151);const row=Math.floor((y-139)/52);
+    if(col<0 || col>=4 || row<0 || row>=4) return;
+    const index=row*4+col;
+    if(x>=27+col*151+138 || y>=139+row*52+43) return;
+    if(studioPickerKind==="objects" && index+studioObjectPage*16<MOD_OBJECTS.length) {
+      const objectIndex=index+studioObjectPage*16;
+      if(objectIndex>=16 && objectIndex-13>=modData.elementCount) return;
+      const biome=modBiomeProfile(studioSelectedBiome);
+      biome.objects[objectIndex]=!biome.objects[objectIndex];
+    }
+    else if(studioPickerKind==="moves" && index<studioMoveChoices().length) {
+      const moveIndex=studioMoveIndex(index);
+      studioSelectedMove=moveIndex;
+      const boss=modBossProfile(studioSelectedBoss);
+      boss.bossMoves[moveIndex]=!boss.bossMoves[moveIndex];
+    }
+    studioUpdatePicker();
+  } else if(studioScreen==="confirm") {
+    if(inside(x,y,46,300,254,66)) {studioShow("config");return;}
+    if(inside(x,y,340,300,254,66)) {
+      if(studioDeleteEntity(studioConfigKind,studioDeleteIndex))
+        studioNotice("DELETED FROM MOD");
+      studioShow("collection");return;
+    }
+  } else if(studioScreen==="color") {
+    studioColorPress(x,y);
+  } else if(studioScreen==="name") {
+    if(inside(x,y,27,132,580,52)) studioNameWrite("");
+    else if(inside(x,y,27,396,188,51)) studioNameWrite(studioNameRead()+" ");
+    else if(inside(x,y,226,396,188,51)) studioNameWrite(studioNameRead().slice(0,-1));
+    else if(inside(x,y,425,396,188,51)) {studioFinishName();return;}
+    else {
+      const col=Math.floor((x-28)/66);const row=Math.floor((y-186)/50);
+      if(col>=0 && col<9 && row>=0 && row<4 &&
+          x<28+col*66+58 && y<186+row*50+42) {
+        const index=row*9+col;
+        if(index<MOD_KEYS.length && studioNameRead().length<20)
+          studioNameWrite(studioNameRead()+MOD_KEYS.slice(index,index+1));
+      }
+    }
+    studioNamePreview.text=studioNameRead();
+  } else if(studioScreen==="paint") {
+    const cell=studioCanvasCell(x,y);
+    if(cell) {modPaintStart(cell.x,cell.y);return;}
+    if(inside(x,y,13,68,110,334)) {
+      const col=Math.floor((x-13)/58);const row=Math.floor((y-68)/42);
+      const index=row*2+col;
+      if(col>=0 && col<2 && row>=0 && row<8 && index<MOD_TOOLS.length &&
+          x<13+col*58+52 && y<68+row*42+38) {
+        studioTool=index;studioPaintDown=false;studioSelection=null;
+        studioUpdatePaintControls();
+      }
+    } else if(inside(x,y,536,76,89,135)) {
+      const col=Math.floor((x-536)/23);const row=Math.floor((y-76)/23);
+      const index=row*4+col;
+      if(col<4 && row<6 && index<24 && x<536+col*23+20 && y<76+row*23+20) {
+        if(studioChooseSecondary) studioSecondaryColor=MOD_PALETTE[index];
+        else studioPrimary=MOD_PALETTE[index];
+        modRenderPalette();
+      }
+    } else if(inside(x,y,348,34,178,30)) {
+      studioOpenColor(studioChooseSecondary?"secondary":"primary","paint");return;
+    } else if(inside(x,y,533,34,95,30)) {
+      const next=studioTarget==="bossArt"?"bossHitbox":
+        studioTarget==="bossHitbox"?"bossArt":
+        studioTarget==="elementArt"?"elementHitbox":
+        studioTarget==="elementHitbox"?"elementArt":
+        studioTarget==="moveArt"?"moveHitbox":"moveArt";
+      studioOpenPaint(next);
+    } else if(inside(x,y,532,222,95,30)) {
+      studioBrushSize=studioBrushSize===1?2:studioBrushSize===2?4:1;
+      studioSize.text="SIZE "+String(studioBrushSize);
+    } else if(inside(x,y,532,258,95,30)) {
+      studioChooseSecondary=!studioChooseSecondary;modRenderPalette();
+    } else if(inside(x,y,532,294,95,30)) {
+      studioFilled=!studioFilled;studioShapeFill.text=studioFilled?"FILLED":"OUTLINE";
+    } else if(inside(x,y,532,330,95,30)) {
+      studioGradientDirection=(studioGradientDirection+1)%3;
+      studioGradientDir.text="GRAD "+["V","H","R"][studioGradientDirection];
+    } else if(inside(x,y,532,366,45,30)) {
+      studioLockTransparency=!studioLockTransparency;
+      studioLock.text=studioLockTransparency?"LOCK*":"LOCK";
+    } else if(inside(x,y,582,366,45,30)) {
+      studioLayered=!studioLayered;
+      studioBlend.text=studioLayered?"MIX*":"MIX";
+    } else if(inside(x,y,13,418,92,39)) modPaintUndo(false);
+    else if(inside(x,y,112,418,92,39)) modPaintUndo(true);
+    else if(inside(x,y,211,418,129,39)) studioImportPaintFile();
+    else if(inside(x,y,347,418,92,39)) {
+      modPaintSnapshot();modData.art[modPaintKey()]=newModCanvas();
+      studioSelection=null;modRenderPaint();modPaintPreview(0,0);
+    } else if(inside(x,y,446,418,181,39)) {
+      studioPaintDown=false;modRebuildMaskFlags();studioShow("config");
+    }
+  }
+}
+function studioUpdate(dt) {
+  if(studioMessageClock>0) {
+    studioMessageClock=Math.max(0,studioMessageClock-dt);
+    if(studioMessageClock===0) studioStatus.text="Touch to edit. A selects. B goes back. X saves.";
+  }
+  if(studioScreen==="name" && Keyboard.nativeDone) {
+    if(!Keyboard.nativeCanceled)
+      studioNameWrite(Keyboard.nativeText);
+    studioFinishName();return;
+  }
+  if(studioScreen==="name" && Keyboard.nativeActive) return;
+  if(GamePad.pressed.X || Keyboard.pressed.x) {modSave();return;}
+  const x=GamePad.leftX;const y=GamePad.leftY;
+  const mag=Math.sqrt(x*x+y*y);
+  if(mag>0.16) {
+    const speed=90+350*Math.pow(clamp((mag-0.16)/0.84,0,1),1.3);
+    studioPointerX=clamp(studioPointerX+x/mag*speed*dt,0,W);
+    studioPointerY=clamp(studioPointerY-y/mag*speed*dt,0,H);
+    studioPointer.x=studioPointerX-5;studioPointer.y=studioPointerY-5;
+  }
+  const back=GamePad.pressed.B || Keyboard.pressed.escape;
+  if(back) {
+    if(studioScreen==="library") {showTitle();return;}
+    if(studioScreen==="home") {modSave();studioShow("library");return;}
+    if(studioScreen==="collection") {studioShow("home");return;}
+    if(studioScreen==="config") {studioShow("collection");return;}
+    if(studioScreen==="confirm") {studioShow("config");return;}
+    if(studioScreen==="picker") {
+      studioShow(studioPickerKind==="moves"?"config":studioPickerReturn);return;
+    }
+    if(studioScreen==="color") {studioShow(studioColorReturn);return;}
+    if(studioScreen==="fightSettings") {studioShow("config");return;}
+    if(studioScreen==="name") {studioShow(studioNameTarget==="mod"?"home":"config");return;}
+    if(studioScreen==="paint") studioShow("config");
+    else studioShow("home");
+    return;
+  }
+  if(GamePad.pressed.A || Keyboard.pressed.enter || Keyboard.pressed.space) {
+    const cell=studioScreen==="paint"?studioCanvasCell(studioPointerX,studioPointerY):null;
+    if(cell) {
+      if(studioPaintDown) modPaintEnd(cell.x,cell.y);
+      else modPaintStart(cell.x,cell.y);
+    } else studioPress(studioPointerX,studioPointerY);
+  }
+  if(Mouse.pressed.left) studioPress(Mouse.x,Mouse.y);
+  if(studioScreen==="paint" && studioPaintDown) {
+    const px=Mouse.left?Mouse.x:studioPointerX;
+    const py=Mouse.left?Mouse.y:studioPointerY;
+    const cell=studioCanvasCell(clamp(px,138,473),clamp(py,70,405));
+    if(cell && (cell.x!==studioLastX || cell.y!==studioLastY)) modPaintDrag(cell.x,cell.y);
+  }
+  if(Mouse.released.left && studioScreen==="paint" && studioPaintDown) {
+    const cell=studioCanvasCell(clamp(Mouse.x,138,473),clamp(Mouse.y,70,405));
+    if(cell) modPaintEnd(cell.x,cell.y);
+  }
+  if(studioScreen==="paint") {
+    const cell=studioCanvasCell(Mouse.left?Mouse.x:studioPointerX,Mouse.left?Mouse.y:studioPointerY);
+    studioPaintCursor.visible=!!cell;
+    if(cell) {studioPaintCursor.x=138+cell.x*8;studioPaintCursor.y=70+cell.y*8;}
+  } else studioPaintCursor.visible=false;
+}
+
+function modSpawnChunk(cx,cy,ox,oy,biomeIndex) {
+  if(!modData || !modData.enabled) return;
+  const biome=modBiomeProfile(biomeIndex);
+  const chosen=[];
+  for(let i=0;i<MOD_OBJECTS.length;i++) if(biome.objects[i]) chosen.push(i);
+  if(chosen.length===0) return;
+  const count=Math.min(8,chosen.length*2);
+  const start=Math.floor(hash(cx,cy,791)*chosen.length);
+  for(let n=0;n<count;n++) {
+    const entry=chosen[(start+n)%chosen.length];
+    const x=ox+75+(n%3)*155+hash(cx,cy,810+n)*37;
+    const y=oy+80+Math.floor(n/3)*150+hash(cx,cy,830+n)*48;
+    if((entry>=12 && entry<=14) || (entry>=16 && entry<=18)) {
+      const elementType=entry<=14?entry-12:entry-13;
+      if(elementType>=modData.elementCount) continue;
+      const behavior=MOD_BEHAVIORS[modData.elements[elementType].behavior].toLowerCase();
+      const custom=addObject(behavior,x,y,42,true);
+      custom.elementType=elementType;
+      if(behavior==="portal") {
+        const pair=addObject("portal",ox+380,oy+380,42,true);
+        pair.elementType=elementType;
+        custom.targetX=pair.x;custom.targetY=pair.y;
+        pair.targetX=custom.x;pair.targetY=custom.y;
+      }
+    } else if(entry===15) addObject("modHole",x,y,42);
+    else if(entry===11) {
+      const first=addObject("portal",x,y,42);
+      const second=addObject("portal",ox+390,oy+385,42);
+      first.targetX=second.x;first.targetY=second.y;
+      second.targetX=first.x;second.targetY=first.y;
+    } else addObject(MOD_OBJECTS[entry].toLowerCase(),x,y,42);
+  }
+}
+function modRenderWorldObjects(closeOnly) {
+  if(!modData) return;
+  const sprites=[];const holes=[];
+  let drawn=0;
+  for(const o of objects) {
+    if(!o.customArt && o.kind!=="modHole") continue;
+    const margin=closeOnly?100:120;
+    if(Math.abs(o.x-cam.x)>W/2+margin || Math.abs(o.y-cam.y)>H/2+margin) continue;
+    if(o.kind==="modHole") {
+      if(holes.length<8) holes.push(spriteSpec(o.x,o.y,84,84));
+      continue;
+    }
+    if(drawn>=3) continue;
+    drawn++;
+    const canvas=modElementCanvas(o,"elementArt");
+    let hadPixel=false;
+    for(let y=0;y<MOD_H;y++) {
+      let x=0;
+      while(x<MOD_W) {
+        const color=canvas.colors[y*MOD_W+x];
+        if(color==="") {x++;continue;}
+        hadPixel=true;
+        let end=x+1;
+        while(end<MOD_W && canvas.colors[y*MOD_W+end]===color) end++;
+        if(sprites.length<2040)
+          sprites.push({x:o.x-o.r+x*2,y:o.y-o.r+y*2,width:(end-x)*2,height:2,tint:color+"ff"});
+        x=end;
+      }
+    }
+    if(!hadPixel && sprites.length<2040)
+      sprites.push({x:o.x-29,y:o.y-29,width:58,height:58,
+        tint:modBossProfile(Math.max(0,modElementBoss(o))).bossColor+"ff"});
+  }
+  modSetSplit(deskModPixelBatches(),sprites);setSprites(deskModHoles,holes);
+  modRenderX=cam.x;modRenderY=cam.y;
+}
+function modElementHit(o,x,y,radius) {
+  if(!o.customArt || !modData) return true;
+  const type=modElementIndex(o);
+  const mask=modElementCanvas(o,"elementHitbox");
+  if(!modHasElementHitbox[type]) return true;
+  const offsets=[[0,0],[radius*0.5,0],[-radius*0.5,0],[0,radius*0.5],[0,-radius*0.5]];
+  for(const offset of offsets) {
+    const px=Math.floor((x+offset[0]-(o.x-o.r))/(o.r*2)*MOD_W);
+    const py=Math.floor((y+offset[1]-(o.y-o.r))/(o.r*2)*MOD_H);
+    if(px>=0 && px<MOD_W && py>=0 && py<MOD_H &&
+        mask.colors[py*MOD_W+px]!=="") return true;
+  }
+  return false;
+}
+function modElementIndex(o) {
+  return o && o.elementType>=0 && o.elementType<MOD_ELEMENT_TYPES?o.elementType:0;
+}
+function modElementCanvas(o,kind) {
+  const index=modElementIndex(o);
+  return modData.art[index===0?kind:kind+String(index)] || MOD_EMPTY_CANVAS;
+}
+function modElementSummons(o) {
+  return modElementBoss(o)>=0;
+}
+function modElementBoss(o) {
+  if(!modData || !o || !o.customArt) return -1;
+  const boss=modData.elements[modElementIndex(o)].boss;
+  return boss>=0 && boss<modData.bossCount?boss:-1;
+}
+function modColorHSV(value) {
+  const rgb=modColorRGB(value);
+  const red=rgb[0]/255;const green=rgb[1]/255;const blue=rgb[2]/255;
+  const high=Math.max(red,green,blue);const low=Math.min(red,green,blue);
+  const difference=high-low;
+  let hue=0;
+  if(difference>0) {
+    if(high===red) hue=60*(green-blue)/difference;
+    else if(high===green) hue=60*(2+(blue-red)/difference);
+    else hue=60*(4+(red-green)/difference);
+  }
+  if(hue<0) hue+=360;
+  return {hue:hue,saturation:high>0?difference/high:0,brightness:high};
+}
+function modRecolorNode(node,baseHue,color,active) {
+  node.tint="#ffffffff";
+  node.hue=active?color.hue-baseHue:0;
+  node.saturation=active?color.saturation:1;
+  node.brightness=active?color.brightness:1;
+}
+function modPrepareBoss() {
+  const active=!!(fight && fight.mod);
+  const color=active?modColorHSV(modBossProfile(fight.bossIndex).bossColor):
+    {hue:290,saturation:1,brightness:1};
+  for(const node of [bossCore,bossAura]) modRecolorNode(node,290,color,active);
+  for(const node of [bossRing,leftHand,rightHand]) modRecolorNode(node,287,color,active);
+  for(const node of [bossGlow,leftGlow,rightGlow]) modRecolorNode(node,266,color,active);
+  for(const node of [avoidMarkers,avoidHazards,shockRings])
+    modRecolorNode(node,279,color,active);
+  for(const node of [stripBeam,interiorFieldA,interiorFieldB,
+    interiorFieldC,interiorFieldD,breakoutField,stripOrbsA,stripOrbsB,
+    stripOrbsC,stripOrbsD,stripOrbsE,stripOrbsF,stripMovingA,stripMovingB,
+    stripMovingC,stripMovingD,stripMovingE,stripMovingF])
+    modRecolorNode(node,290,color,active);
+  const canvas=modData && active?
+    modData.art[modBossArtKey(fight.bossIndex,"bossArt")]:null;
+  const sprites=[];
+  if(canvas) for(let y=0;y<MOD_H;y++) {
+    let x=0;
+    while(x<MOD_W) {
+      const color=canvas.colors[y*MOD_W+x];
+      if(color==="") {x++;continue;}
+      let end=x+1;
+      while(end<MOD_W && canvas.colors[y*MOD_W+end]===color) end++;
+      sprites.push({x:x*2,y:y*2,width:(end-x)*2,height:2,tint:color+"ff"});
+      x=end;
+    }
+  }
+  modSetSplit(bossModPixelBatches(),sprites);
+  modBossHasArt=sprites.length>0;
+  modBossArtGroup.visible=!!(fight && fight.mod && modBossHasArt);
+  modSetVisible(bossModPixelBatches(),modBossArtGroup.visible);
+  modMoveArtGroup.visible=false;modSetVisible(moveModPixelBatches(),false);
+}
+function modUpdateBossPosition() {
+  if(!fight) return;
+  const artVisible=!!(fight.mod && modBossHasArt && fight.phase===1);
+  modBossArtGroup.visible=artVisible;
+  modSetVisible(bossModPixelBatches(),artVisible);
+  if(artVisible) {
+    let scale=1;
+    if(fight.teleport) {
+      const t=fight.teleport.age;
+      scale=t<0.11?Math.max(0,1-t/0.11):
+        1-Math.pow(1-clamp((t-0.11)/0.34,0,1),4);
+    }
+    modBossArtGroup.scale=scale;
+    modBossArtGroup.x=fight.x-42*scale;modBossArtGroup.y=fight.y-42*scale;
+    bossCore.visible=false;bossRing.visible=false;
+  }
+  modUpdateMoveArt();
+}
+function modMoveCenter() {
+  const move=fight.modMove;
+  if(move>=8) return {x:fight.x,y:fight.y};
+  if(move===3 || move===4) return {x:(fight.left.x+fight.right.x)/2,
+    y:(fight.left.y+fight.right.y)/2};
+  if(move===5 && fight.zones.length>0) return {x:fight.zones[0].x,y:fight.zones[0].y};
+  if(move===6) return {x:55,y:240};
+  return {x:fight.x,y:fight.y};
+}
+function modPrepareMoveArt(move) {
+  const canvas=modData.art[modBossArtKey(fight.bossIndex,"moveArt"+String(move))];
+  const sprites=[];
+  if(canvas) for(let y=0;y<MOD_H;y++) {
+    let x=0;
+    while(x<MOD_W) {
+      const color=canvas.colors[y*MOD_W+x];
+      if(color==="") {x++;continue;}
+      let end=x+1;
+      while(end<MOD_W && canvas.colors[y*MOD_W+end]===color) end++;
+      sprites.push({x:x*2,y:y*2,width:(end-x)*2,height:2,tint:color+"ff"});
+      x=end;
+    }
+  }
+  modSetSplit(moveModPixelBatches(),sprites);modMoveHasArt=sprites.length>0;
+}
+function modUpdateMoveArt() {
+  const visible=!!(fight && fight.mod && modMoveHasArt && fight.modMoveTime>0);
+  modMoveArtGroup.visible=visible;modSetVisible(moveModPixelBatches(),visible);
+  if(visible) {
+    const point=modMoveCenter();
+    modMoveArtGroup.x=point.x-42;modMoveArtGroup.y=point.y-42;
+  }
+}
+function modMoveHits(x,y) {
+  const canvas=modData.art[modBossArtKey(fight.bossIndex,"moveHitbox"+String(fight.modMove))];
+  if(!canvas) return false;
+  const point=modMoveCenter();
+  const px=Math.floor((x-(point.x-42))/2);
+  const py=Math.floor((y-(point.y-42))/2);
+  return px>=0 && px<MOD_W && py>=0 && py<MOD_H &&
+    canvas.colors[py*MOD_W+px]!=="";
+}
+function modBossHit(x,y) {
+  if(!fight || !fight.mod) return true;
+  const canvas=modData.art[modBossArtKey(fight.bossIndex,"bossHitbox")];
+  if(!modHasBossHitbox[fight.bossIndex] || !canvas) return true;
+  const px=Math.floor((x-(fight.x-42))/2);
+  const py=Math.floor((y-(fight.y-42))/2);
+  return px>=0 && px<MOD_W && py>=0 && py<MOD_H && canvas.colors[py*MOD_W+px]!=="";
+}
+function modBossAttack() {
+  if(!fight || !fight.mod) return false;
+  const boss=modBossProfile(fight.bossIndex);
+  if(boss.bossMode==="body" && fight.phase!==1) return false;
+  const choices=[];
+  if(fight.phase===1) {
+    const phaseMoves=boss.bossMode==="body"?[0,8,9,10,11]:
+      boss.bossMode==="bossML"?[0,1,2,7,8,9,10,11]:[0,1,2,7];
+    for(const index of phaseMoves)
+      if(boss.bossMoves[index] && (index!==2 || fight.hp<fight.max))
+        choices.push(index);
+  } else if(fight.phase===2) {
+    for(const index of [3,4,5,7]) if(boss.bossMoves[index]) choices.push(index);
+  } else {
+    for(const index of [3,4,5,6,7]) if(boss.bossMoves[index]) choices.push(index);
+  }
+  if(choices.length===0) {
+    fight.modMove=-1;fight.modMoveTime=0;
+    return false;
+  }
+  const move=choices[Math.floor(random(0,choices.length))];
+  fight.modMove=move;
+  fight.modMoveTime=[0.5,0.7,1.4,2.5,5.0,9.5,8.0,1.5,3.1,9.7,10.2,7.1][move];
+  modPrepareMoveArt(move);
+  if(move===0) {
+    fight.teleport={age:0,x:random(190,450),y:random(150,290)};
+  } else if(move===1) {
+    fight.slam={age:0,startY:fight.y};fight.invuln=1.2;
+    fightMessage("GROUND SLAM!",1.5);
+  } else if(move===2) {
+    fight.hp=Math.min(fight.max,fight.hp+5);fightMessage("BOSS MENDS +5",1.5);
+  } else if(move===3) {
+    const y=random(120,240);
+    moveHand(fight.left,197,y,1,"quartOut");
+    moveHand(fight.right,443,y,1,"quartOut");
+    fight.attack="drop";fight.attackClock=0;
+  } else if(move===4) startMoveFour();
+  else if(move===5) startAvoidance();
+  else if(move===6) startStrip();
+  else if(move===7) {spawnBossEggs(8);fightMessage("EGG RAIN!",1.5);}
+  else if(move===8) startBodyDrop();
+  else if(move===9) startBodyWaves();
+  else if(move===10) startBodyAvoidance();
+  else startBodyStrip();
+  return true;
+}
