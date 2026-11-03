@@ -24,3 +24,7 @@ cd cafe-port
 The WUHB is written to `build/An-EgG-Cafe-Engine.wuhb` at the repository root. Copy it to `sd:/wiiu/apps/` for Aroma. See [`cafe-port/README.md`](cafe-port/README.md) for controls and gameplay details.
 
 Save files live on the Wii U SD card under `sd:/wiiu/apps/cafe-engine/saves/` and are not part of this repository.
+
+## License
+
+The An EgG source code and project documentation are licensed under the [MIT License](LICENSE). Bundled art, audio, fonts, and the Cafe Engine runtime are separate from this grant and retain their own terms. The Handlee font is licensed under the [SIL Open Font License 1.1](assets/fonts/OFL.txt).
