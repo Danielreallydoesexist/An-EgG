@@ -27,4 +27,4 @@ Save files live on the Wii U SD card under `sd:/wiiu/apps/cafe-engine/saves/` an
 
 ## License
 
-The An EgG source code and project documentation are licensed under the [MIT License](LICENSE). Bundled art, audio, fonts, and the Cafe Engine runtime are separate from this grant and retain their own terms. The Handlee font is licensed under the [SIL Open Font License 1.1](assets/fonts/OFL.txt).
+The An EgG source code and project documentation are licensed under the [MIT License](LICENSE). The bundled art, audio, and fonts are separate from this grant and retain their own terms. The Handlee font is licensed under the [SIL Open Font License 1.1](assets/fonts/OFL.txt). The Cafe Engine runtime is covered by [Cafe Engine's own MIT license](https://github.com/Danielreallydoesexist/Cafe-Engine/blob/main/LICENSE).
